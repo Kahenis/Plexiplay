@@ -1,0 +1,16 @@
+{
+  "locked": [
+    "playback",
+    "players"
+  ],
+  "hashes": {
+    "auth": "755761c07dba85dc8b4d599c1ee2e9f89fae4a8ffffe671f91df39ab83ef3b25",
+    "library": "d1afc7192679e72ceb732edc80babfb60809fa36a8a1cd2c5b242d1178756f8a",
+    "preroll": "6cb61edf02111a5d26f38a77cda0045218620b9baec2e1deee4e1d1679aaee35",
+    "player": "4c33406979fe599d03c35c20937a5dc55dd9a5539c35b319617d98440044c333",
+    "settings": "bbea10a45746fd1850f1ec75574c69087f004c6a3b1da16138c33a1911b5f449",
+    "shell": "c04ccad9d2d598eb6dbd2088c3852a19faf6733825590cda1eca8c10533602f0",
+    "playback": "0162025b521538dd050388c6e735a7979acd1cc5c6f3946d60926d4a7201e0fd",
+    "players": "7e4858f06a30293a5aefc7e50cecaa59d26cbce616fbc3c0cb412622f254b7b5"
+  }
+}

@@ -1,0 +1,366 @@
+# Notes de développement (Plexiplay clone)
+
+Fichier de reprise : à lire en premier dans une nouvelle session, avant de relire le code.
+
+## Dépôts
+
+- Original : `Kahenis/Plexiplay` (public).
+- Clone : `Kahenis/plexiplay-clone` (public). C'est lui qu'on modifie et dont l'appli se met à jour.
+- Le jeton GitHub n'est jamais écrit dans le dépôt. Il est fourni par le propriétaire dans la conversation (fine-grained, limité à `plexiplay-clone`, droits Contents et Workflows en lecture/écriture, Actions en lecture).
+
+## Reprendre le travail
+
+1. Cloner : `git clone https://github.com/Kahenis/plexiplay-clone.git Plexiplay`
+2. Pousser avec le jeton, sans l'enregistrer dans la config git :
+   `git -c http.extraheader="Authorization: Basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" push origin main`
+3. Pousser dès qu'une étape est terminée : le dossier local peut disparaître entre deux messages.
+
+## Compiler
+
+Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environnement de Claude). Tout passe par GitHub Actions :
+
+- `.github/workflows/apk.yml` : à chaque push sur `main`, compile `:app:assembleDebug`, publie l'APK en artefact et dans une release `vX.Y.Z` (fichier `PlexiPlay-clone-X.Y.Z-debug.apk`). Les erreurs de compilation sont recopiées dans les annotations du run.
+- `.github/workflows/checks.yml` : vérifie les verrous et la spec preroll.
+- Pour savoir si un build a réussi sans l'API GitHub : `git ls-remote --tags origin vX.Y.Z`. Le tag n'existe qu'une fois l'APK publié.
+
+## Versions
+
+- À chaque modification livrée, augmenter ensemble : `versionCode` et `versionName` dans `app/build.gradle.kts`, `VERSION` dans `core/plex/src/main/kotlin/tv/plexiplay/plex/PlexHeaders.kt`, et la version dans `README.md`.
+- Sans nouvelle version, l'APK du tag existant est simplement remplacé et la TV ne propose aucune mise à jour.
+- La mise à jour automatique (`app/.../update/AppUpdate.kt`) interroge `Kahenis/plexiplay-clone`, dernière release, tags au format `vX.Y.Z`.
+- L'identifiant d'appli est `tv.plexiplay.app`, identique à l'original : les deux ne peuvent pas être installés ensemble.
+
+## Modules verrouillés
+
+- `tools/locks.json` liste les modules figés (`playback`, `players`). `tools/check_locks.py` refuse la compilation si l'un d'eux change.
+- Ne pas toucher à un module verrouillé sans l'accord explicite du propriétaire. Avec son accord : retirer l'id de `locked`, modifier, remettre l'id, puis `python3 tools/check_locks.py --update`.
+- Après toute modification d'un module non verrouillé : `python3 tools/check_locks.py --update`, puis `python3 tools/check_locks.py && python3 tools/verify_spec.py`.
+- `playback` couvre notamment `buildQueue` et `trailerQueue` dans `MainActivity.kt`. `players` couvre `PlayerScreen.kt`, `MpvPlayerScreen.kt`, `core/player` et `DeviceCodecs.kt`.
+
+## Où trouver quoi
+
+| Sujet | Fichier |
+| --- | --- |
+| Écran principal, chargement des rangées, file de lecture | `app/.../MainActivity.kt` |
+| Rail gauche, rangées, miniatures, popup d'appui long | `app/.../ui/shell/ShellScreen.kt` |
+| Icônes du rail et étiquettes de 3 caractères | `app/.../ui/shell/RailIcons.kt` |
+| Fiche film, menus résolution, audio, sous-titres | `app/.../ui/detail/MovieDetailScreen.kt`, `MovieFacts.kt` |
+| Lecteur ExoPlayer | `app/.../ui/player/PlayerScreen.kt` (verrouillé) |
+| Lecteur mpv | `app/.../ui/player/MpvPlayerScreen.kt` (verrouillé) |
+| Paramètres | `app/.../ui/settings/SettingsScreen.kt` |
+| Préférences enregistrées | `app/.../data/SessionStore.kt` |
+| API Plex (rangées, marquer vu/non vu, URLs) | `core/plex/.../PlexClient.kt` |
+| Modèles de données Plex | `core/plex/.../model/Models.kt` |
+| URLs de flux, choix direct ou transcodage | `core/player/.../StreamUrlFactory.kt`, `CodecRegistry.kt` |
+| Prerolls et bandes-annonces | `core/plex/.../preroll/` |
+
+## Fonctions ajoutées dans le clone
+
+- Choix de la résolution, de la langue audio et des sous-titres sur la fiche film, avant la lecture (ExoPlayer et mpv). Valeurs par défaut tirées des Paramètres.
+- « Quoi de neuf » : appui de 3 s sur OK sur une miniature de « Continuer à regarder » ou « Regarder à nouveau » : popup Supprimer / Annuler. Supprimer appelle `setWatched(..., false)` côté serveur Plex.
+- Rail gauche réduit : icône par catalogue (maison, claquette, écran, micro pour les spectacles, dossier sinon) et 3 caractères pour les noms inconnus. Étiquettes masquées quand le rail est déployé.
+
+- Séries : `ui/detail/SeriesScreen.kt` (fiche série avec saisons, page saison avec épisodes). Fiche épisode = `MovieDetailScreen` avec `promoKey`/`themePath`/`remembered` (bande-annonce et thème de la série). Choix audio/sous-titres mémorisés par série (`SessionStore.seriesChoice`). `buildEpisodeQueue` (fin de `MainActivity.kt`, hors modules verrouillés) enchaîne l'épisode choisi et jusqu'à 5 suivants.
+- Si une compilation échoue : `git fetch origin build-log` puis lire `errors.txt` / `tail.txt` (branche écrasée par le workflow en cas d'échec).
+
+## Limites connues
+
+- Confirmation Oui/Non (`ui/shell/ConfirmDialog.kt`) avant déconnexion et avant de quitter (Retour à la racine).
+- Nouveautés des séries : plus de 4 épisodes consécutifs de la même saison = une vignette « N ajouts » (`groupAdditions` dans MainActivity.kt, champ local `Metadata.added`), ouvre la page de la saison.
+- Bibliothèques affichées : `ui/settings/LibraryPicker.kt`, masquées mémorisées par serveur (`SessionStore.hiddenLibraries`). Format d'écran retiré des paramètres, toujours AUTO.
+- Textes de l'appli : toujours au vouvoiement (usage en France).
+- Recherche : ligne « Recherche » sous Accueil (`ui/shell/SearchScreen.kt`), clavier à l'écran uniquement, filtrage local dès 3 lettres sur le catalogue du serveur actif (films + séries des bibliothèques affichées).
+- Veille : `FLAG_KEEP_SCREEN_ON` posé dans `MainActivity.kt` tant que `clips != null` (le code des lecteurs reste verrouillé).
+- Connexion : `PlexClient.reach` essaie toutes les adresses d'un serveur (`ServerEndpoint.alternates`) et garde la première qui répond.
+- Serveurs : `chooseServers` renvoie tous les serveurs (les siens puis ceux des amis) ; au démarrage le premier qui a des bibliothèques passe en tête.
+- Séries : appui long sur OK sur une saison ou un épisode = vu / non vu. Badge de saison « Reste N ».
+- Séries : pas de reprise à la position (il faudrait modifier les lecteurs verrouillés), pas de compte à rebours avant l'épisode suivant (enchaînement direct).
+
+- Rien n'a été testé sur une vraie TV ni avec un vrai serveur Plex : seule la compilation est vérifiée.
+- Pour un épisode « à suivre » jamais commencé, la remise à « non vu » peut ne pas le retirer de « Continuer à regarder ».
+
+## Mode compatible (0.1.56)
+- Réglage « Mode compatible » : Automatique / Activé / Désactivé (`compatMode`). `compat` est la valeur effective (SessionStore : réglage + apprentissage `compat_learned`).
+- Actif : décodeur Dolby Vision écarté dans ExoPlayer (lecture de la couche HDR10), DTS/DTS-HD/TrueHD convertis par le serveur (`audioCodec` ac3 ou aac).
+- Quand le son seul doit être converti, `directStream=1` : l'image est copiée, pas retranscodée (avant : tout le film était converti, trop lourd pour un NAS en 4K HDR).
+- Automatique : si le film n'avance pas après 20 s ou si le lecteur signale une erreur, l'appli relance en mode compatible et le mémorise (`learnCompat`). « Activé » ou « Désactivé » efface cet apprentissage.
+- Paramètres : ligne de diagnostic `DeviceCodecs.summary()` (décodeurs annoncés par la TV).
+- Les modules `playback` et `players` ont été rouverts pour ce changement puis reverrouillés.
+
+## Reprise de lecture (0.1.57)
+- Fiche film/épisode : si `viewOffset` ≥ 30 s, boutons « Reprendre à 1 h 12 » (principal) et « Recommencer ». Page série : « Reprendre S2 E5 » pour l'épisode en cours.
+- `ClipPlay.startMs` = `viewOffset` − 5 s (clip principal seulement). ExoPlayer : `setMediaItems(items, index, startMs)`. mpv : seek absolu à l'apparition des pistes. Le transcodage n'utilise pas `offset` : ExoPlayer se positionne lui-même, ce qui garde des positions de progression cohérentes.
+- Pas de bandes-annonces avant une reprise (déjà le cas : `viewOffset <= 0` requis dans `buildQueue`).
+- Le repli automatique du mode compatible reprend à la même position.
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+## Saisons et générique (0.1.58)
+- Miniature de saison : « Saison N » (ou le titre Plex pour les spéciaux) puis « N épisodes » sous l'affiche. « Reste X » (orange) reste sur l'affiche pour une saison commencée ; une saison entièrement vue porte une coche teal en haut à droite.
+- Le générique (`themePlayer`) est lu une seule fois par ouverture de fiche (`REPEAT_MODE_OFF`), sur les fiches série/saison et sur la fiche film/épisode.
+
+## Format d'image et fluidité mpv (0.1.59)
+- ExoPlayer : certains MKV déclarent une taille d'affichage erronée (ex. 16:9 pour une image 3840×1600) et ExoPlayer l'applique (visages allongés). En HD/UHD (largeur ≥ 1920) avec un rapport de pixels ≠ 1, on impose les proportions de l'image (`setAspectRatio(w/h)` après `onVideoSizeChanged`). L'info de lecture (« i ») montre la taille, le rapport de pixels et la correction.
+- mpv : `hwdec=mediacodec,mediacodec-copy` (direct puis repli), `video-sync=display-resample`, `interpolation=no`. À valider sur une vraie TV : si l'image reste noire avec mpv, revenir à `HwdecMode.MediacodecCopy` seul.
+- Modules `players` rouvert puis reverrouillé.
+
+## Mode compatible plus strict (0.1.60)
+- L'apprentissage automatique est désormais **par film** (`compat_titles`, clé = ratingKey), plus global. « Activé » reste global ; « Désactivé » ignore tout apprentissage. L'ancienne clé `compat_learned` n'est plus lue.
+- Déclenchement du repli : erreur de décodeur ou de sortie audio uniquement, ou aucune image rendue après 25 s (`onRenderedFirstFrame`).
+- Flux converti par le serveur : si les proportions du flux diffèrent de plus de 5 % de celles du fichier (`Media.width/height` → `ClipPlay.sourceAspect`), on impose celles du film. L'info « i » indique lecture directe / flux converti, taille, rapport de pixels.
+- mpv : surface directe (`SurfaceType.Surface`) à la place de la texture ; l'info « i » affiche décodage matériel utilisé, cadence, images perdues (décodeur / affichage).
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+## Proportions verrouillées (0.1.61)
+- Le rapport imposé (flux converti ou pixels non carrés) est mémorisé (`locked`) et réappliqué en boucle sur `exo_content_frame` (toutes les 0,4 s pendant 3 s après un changement, puis 1,5 s) avec `requestLayout`/`invalidate` : sur certaines TV l'ancien affichage restait figé jusqu'au prochain redessin (appui sur OK). Si cela ne suffit pas, passer ExoPlayer en surface « texture ».
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+## « OK invisible » (0.1.62)
+- Diagnostic : en lecture directe, la fenêtre vidéo (SurfaceView) de certaines TV s'affiche en plein 16:9 (image étirée) tant que l'interface ne change pas ; l'appui sur OK la remet au bon format.
+- Le rapport (largeur/hauteur × pixels) est désormais toujours verrouillé, pas seulement pour les flux convertis/pixels non carrés.
+- Décalage d'un pixel de la vidéo (`nudge`, padding bas 1 dp) à 0,8 s, 2 s et 4 s après la première image, puis retour : équivalent invisible de l'appui sur OK.
+- Si cela ne suffit pas : surface « texture » pour ExoPlayer (attention au HDR) ou masquer/réafficher la vue.
+- Modules `playback` et `players` rouverts puis reverrouillés.
+- Astuce validée sur TV Philips (0.1.62). Depuis la 0.1.65 elle est un réglage (`formatFix`, activé par défaut) : la TV de Jeff avait « 16/9 permanent » actif, la correction n'est peut-être pas nécessaire partout.
+
+## Modes mpv (0.1.63)
+- Constat (TV Philips, 4K) : décodeur `mediacodec`, 0 image perdue côté décodeur, mais saccades « de rendu » en 4K ; 720p fluide.
+- Réglage « Mode mpv » (visible quand le lecteur est mpv) : **Normal** (réglage d'origine : texture + `mediacodec-copy`, profil fast), **Direct** (`vo=mediacodec_embed`, `hwdec=mediacodec`, surface directe : fluide en 4K mais **sans sous-titres**), **Allégé** (rendu simplifié : filtres bilinéaires, `tone-mapping=clip`, sans `hdr-compute-peak`/débanding/interpolation).
+- Les options sont posées après `initialize` via `mpv.setString` ; chaque appel est protégé par `runCatching`. Le panneau « i » affiche le mode, le décodage, la cadence, les images perdues (décodeur/affichage), en retard (`vo-delayed-frame-count`) et la fréquence écran.
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+## Paramètres plus compacts (0.1.64)
+- Écran des paramètres réduit d'environ 20 % : titre 14,5 sp, boutons 11 sp (marges 10 × 4 dp), explications 10,5 sp (compromis de lisibilité, -12 %), pied de page 10 sp, marges 16 × 13 dp, espacement 5 dp.
+
+## Correction du format en option (0.1.65)
+- Réglage « Correction du format » (ExoPlayer, activé par défaut) : coupe l'imposition du rapport et le décalage d'un pixel. L'info « i » affiche « correction activée/désactivée ».
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+## Simplifications et navigation (0.1.66)
+- Langue de l'appli : ligne supprimée, français fixé (`uiLanguage = "fr"` dans SessionStore).
+- mpv : plus de choix de mode, toujours « allégé » (`mpvMode = "light"`). Les modes normal/direct restent dans `MpvPlayerScreen` mais ne sont plus proposés.
+- « Pistes avant le film » : ligne supprimée. `buildQueue` ne demande plus `cinemaQueue` : le film est lu seul (`trailerCount` toujours 0). Le bouton « Bandes-annonces » de la fiche film est conservé.
+- Clic sur une bibliothèque : petit indicateur vert « Chargement… » en haut à droite jusqu'à ce que la page soit prête (secours : 8 s).
+- Retour dans le menu de gauche : le focus revient sur la ligne de la bibliothèque ouverte (`focusIndex`), plus sur la première ligne.
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+## Version 0.2.0
+- Version portée à 0.2.0.
+- Indicateur « Chargement… » : reste affiché jusqu'à ce que la page soit prête **et** que les affiches visibles soient dessinées (`PosterStore.pendingVisible()` à 0 pendant 3 contrôles consécutifs de 150 ms) ; secours à 25 s.
+- Mise à jour : le mot « Téléchargement… » du bouton de mise à jour est écrit en vert (comme l'indicateur de chargement).
+
+## Bonus du serveur avant les films (0.2.1)
+- Rétabli en permanence, sans réglage : `buildQueue` appelle `cinemaQueue(…, 0)` (même demande que le client officiel avec « lire la piste 1 avant le film », 0 bande-annonce de cinéma). Le serveur ajoute lui-même les bonus selon sa logique (au hasard ou à la suite).
+- Uniquement pour un **film** jamais commencé ou vu en entier, et aussi avec « Recommencer ». Jamais pour une reprise (« Reprendre »), ni pour les épisodes, ni lors du repli automatique du mode compatible (`bonus = false`).
+- Erreur de la 0.1.66 corrigée : la suppression de la ligne « Pistes avant le film » avait aussi coupé les bonus.
+- Modules `playback` et `players` rouverts puis reverrouillés.
+
+
+## Version 1.0.0-RC : easter egg du logo
+
+- Appui prolongé (5 s) sur la roue dentée des paramètres : fenêtre avec le nom « Plexiplay » dont les lettres apparaissent, tournent autour du centre en accélérant, se resserrent avec un éclair orange et se fondent dans le logo (`logo.png`) ; la fenêtre se referme (fondu), puis les paramètres s'ouvrent normalement. Retour ferme aussi la fenêtre. Un appui court ouvre les paramètres comme avant.
+- Fichiers : `ui/shell/EasterEgg.kt` (animation, une seule valeur de progression 0..1 sur 5,2 s) ; `GearButton` dans `ShellScreen.kt` (détection du maintien).
+- Numéro de version « 1.0.0-RC » (release candidate). `AppUpdate.newer` : le suffixe après « - » est ignoré pour les nombres, et « 1.0.0 » est considérée plus récente que « 1.0.0-RC ».
+- Aucun module verrouillé touché.
+
+
+## Version 1.0.0-RC2 : rapport de lecture au serveur
+
+- Symptôme : plus aucune session dans « Lecture en cours » du serveur ni dans Tautulli.
+- Causes : ExoPlayer ne signalait que les changements lecture/pause et l'arrêt, sans point régulier, et rien après un bonus (la lecture ne s'interrompt pas, donc aucun changement d'état au démarrage du film) ; MPV ne signalait que commandes affichées et jamais l'arrêt.
+- Correctif : chaque lecteur envoie l'état toutes les secondes pendant le film (`LaunchedEffect`), l'arrêt est signalé à la sortie (aussi pour MPV). `MainActivity` limite l'envoi : immédiat si l'état ou le film change, sinon un point toutes les 10 s, via un exécuteur unique (plus un thread par appel). Identifiant de session `X-Plex-Session-Identifier` propre à chaque lecture, `hasMDE=1`, durée et position jamais négatives (`PlexClient.timeline`).
+- Numéros : `AppUpdate.newer` compare aussi le numéro de la candidate (RC < RC2 < version finale).
+- Modules `playback` et `players` déverrouillés puis reverrouillés.
+
+
+## Version 1.0.1-RC : numérotation
+
+- Règle : les versions de test s'écrivent `x.x.x-RC` et le troisième chiffre monte à chaque publication (1.0.1-RC, 1.0.2-RC…), sans « RC2 ».
+- 1.0.1-RC reprend exactement le code de la 1.0.0-RC2 (rapport de lecture au serveur) ; seul le numéro change.
+
+
+## Version 1.0.2-RC : proposition de mise à jour au démarrage
+
+- Au démarrage (une fois par lancement, après l'écran de chargement), l'appli interroge en arrière-plan la dernière release du dépôt (`AppUpdate.latest`). Sans nouveauté, ou en cas d'échec réseau, rien ne s'affiche.
+- Si une version plus récente existe : fenêtre `UpdateDialog` (logo à gauche, « Plexiplay X est disponible (vous avez Y) », boutons « Installer » / « Plus tard »). Elle ne s'affiche jamais pendant une lecture. « Installer » : téléchargement (« Téléchargement… » en vert) puis installation Android ; « Plus tard » ou Retour : fermeture, la proposition revient au prochain démarrage. Le bouton des paramètres reste en place.
+- Fichiers : `ui/shell/UpdateDialog.kt`, état `startupOffer` / `startupChecked` dans `MainActivity` (hors modules verrouillés).
+
+
+## Version 1.0.3-RC : vidéos personnelles lues directement
+
+- Bibliothèques « Vidéos personnelles » / « Plex Video Files » (type film, agent `…agents.none` ou scanner « Video Files » / « Personal Media », voir `LibrarySection.personal`) : un clic sur une vidéo lance la lecture sans passer par la fiche.
+- Pas de bonus ni de bande-annonce ; reprise automatique si la vidéo est commencée. La bibliothèque est déterminée par `librarySectionID` de l'élément (nouveau champ de `Metadata`), à défaut par la bibliothèque affichée. Les films des autres bibliothèques ne changent pas.
+- `openMovie` dans `MainActivity` (hors région verrouillée `playback`).
+
+
+## Version 1.0.4-RC : retour automatique en fin de film
+
+- À la fin complète d'un film ou d'une vidéo personnelle, l'écran de lecture se ferme et l'appli revient d'où la vidéo a été lancée (comme Retour). Le rapport « arrêté » part à la sortie, ce qui marque le film comme vu côté serveur.
+- `ClipPlay.closeOnEnd` (vrai seulement pour un élément de type film) : les épisodes de séries ne changent pas. ExoPlayer : `onPlaybackStateChanged(STATE_ENDED)` sur le dernier élément. MPV : `eof-reached` / `idle-active` dans la boucle de rapport, avec la dernière position ≥ 90 % de la durée.
+- MPV : la dernière position/durée connues ne sont mises à jour que si la durée est connue (évite d'écraser avec 0 à l'arrêt).
+- Modules `playback` et `players` déverrouillés puis reverrouillés.
+
+
+## Version 1.0.5-RC : fiche série resserrée et horloge
+
+- Fiche série : espaces réduits entre « année · saisons · épisodes », genres, notation, résumé et boutons (gain d'environ une ligne) ; résumé limité à 5 lignes au lieu de 6, pour laisser apparaître les noms des saisons.
+- Horloge (`ClockChip`, heure du système en 24 h, mise à jour toutes les 10 s) en haut à droite de l'écran, ajoutée dans `MainActivity` au-dessus des écrans ; absente pendant la lecture, sans focus.
+- Thème secondaire « Néon » : maquette présentée, développement à venir sur accord.
+
+
+## Version 1.0.6-RC : thème secondaire « Néon »
+
+- Réglage « Thème » (Classique / Néon) dans les paramètres, mémorisé (`SessionStore.theme`). Le classique reste le défaut et n'est pas modifié.
+- `ThemeMode.neon` (état Compose) : `Ink`, `Panel`, `Accent`, `Signal`, `FocusRing` deviennent des propriétés qui changent de valeur selon le thème, donc tout l'écran suit.
+- `ui/theme/ThemeStyle.kt` : `themedButton` (classique : anneau + aplat comme avant ; Néon : bouton 3D avec socle, dégradé, reflet et halo doré au focus), `screenBackground` (dégradé nuit avec halos violet/turquoise), `panelBackground` (menu de gauche). Appliqués : onglets, boutons des fiches, boutons des paramètres, menu de gauche, boîtes Oui/Non et mise à jour, fonds d'écran. Affiches : agrandies de 7 % avec ombre dorée au focus. Horloge lumineuse.
+- Pas de flou ni d'effet coûteux : seulement des dégradés et ombres, pour rester fluide sur les petits boîtiers.
+
+
+## Version 1.0.7-RC : réglages du thème Néon et volume du générique
+
+- Générique des séries : volume du lecteur de thème 0,7 → 0,525 (−25 %), page des saisons et fiche des épisodes.
+- Néon, lisibilité : écriture sombre sur fond clair pour les onglets sélectionnés et la ligne sélectionnée du menu de gauche (le cas des boutons clairs à focus était déjà correct).
+- Néon, fond plus foncé : base 0xFF070A1C, halos atténués, menu et boutons au repos assombris.
+- Néon, halo des affiches : marge de 12 dp autour des rangées (`contentPadding`) et de la grille pour que le halo de la première affiche ne soit plus coupé. Le thème classique ne change pas.
+
+
+## Version 1.1.0-RC : thème Néon, finitions
+
+- Néon : le halo doré qui débordait autour des boutons et des affiches est supprimé ; on garde le contour jaune de sélection et l'agrandissement de 7 % des affiches. La marge autour des rangées est réduite à 6 dp (juste de quoi ne pas couper le contour de l'affiche agrandie).
+- Néon : le titre de la ligne sélectionnée du menu de gauche (Accueil, Films…) passe en noir sur le fond clair.
+
+
+## Version 1.1.1-RC : volume du générique réglable
+
+- Paramètres : « Volume du générique », liste déroulante (`VolumeDialog`) de 0 à 70 % par paliers de 10, 50 % par défaut ; haut/bas pour choisir, OK pour valider, Retour pour fermer. Mémorisé dans `SessionStore.themeVolume`.
+- S'applique à la musique de générique des fiches de saisons (`SeriesScreen`) et d'épisodes (`MovieDetailScreen`), en direct si le réglage change. (Le lecteur de la fiche d'épisode était auparavant à plein volume.)
+
+
+## Version 1.1.2-RC : volume du générique 0 à 50 %
+
+- Liste du réglage « Volume du générique » : 0, 10, 20, 30, 40, 50 % ; défaut 20 %. Une valeur déjà enregistrée au-dessus de 50 % est ramenée à 50 %.
+
+
+## Version 1.1.3-RC : invitations Plex et connexion
+
+- Paramètres, tout en bas : « Vérifier les invitations ». `PlexClient.invites` lit `https://plex.tv/api/invites/requests` (XML : compte, e-mail, drapeaux friend/home/server, serveur proposé) ; `acceptInvite` fait le PUT `…/requests/{id}?friend=&home=&server=`.
+- `InviteDialog` : indique le compte qui demande en ami et le serveur qui partage (nombre de bibliothèques), boutons Accepter / Plus tard. Après acceptation : rechargement des serveurs (jusqu'à 6 essais, le partage peut tarder), bascule sur le serveur nouvellement apparu et ouverture du sélecteur de bibliothèques. Pas de fusion multi-serveurs dans la colonne de gauche (choix : option simple).
+- Connexion : `PinAuthClient.createPin(strong)`, `webAuthUrl` (`https://app.plex.tv/auth#?clientID=…&code=…&context[device][product]=Plexiplay`), QR code dessiné avec zxing core 3.5.3 (Google, Apple ou e-mail sur le téléphone) ; le code à 4 caractères plex.tv/link reste en parallèle. Les deux codes sont sondés.
+- Connexion e-mail : mot de passe masqué, `TwoFactorRequired` (401 « 1029 / verification ») fait apparaître le champ du code à 6 chiffres envoyé en `verificationCode`.
+
+
+## Version 1.2.0 : version finale
+
+- Passage de 1.1.3-RC à la version finale 1.2.0 (versionCode 83), sans suffixe RC. Aucun changement de code : contenu identique à 1.1.3-RC (invitations Plex, connexion e-mail avec 2FA, QR code).
+- Les appareils en 1.x.x-RC reçoivent cette version à la mise à jour (la version finale passe devant toutes les candidates).
+
+
+## Version 1.2.1 : Home ferme l'application
+
+- `MainActivity.onStop` : si l'appli quitte l'écran (touche Home, applis récentes, veille) hors changement de configuration, `finishAndRemoveTask()` la ferme sans message ; la lecture s'arrête donc et la session disparaît du serveur.
+- Exception : `KeepOpen.on` (posé par `AppUpdate.install`, remis à faux dans `onStart`) empêche la fermeture quand l'installateur Android ou l'écran d'autorisation passe devant pendant une mise à jour.
+
+
+## Version 1.2.2 : bouton Recommencer en icône
+
+- Fiche film : « Recommencer » devient une icône ronde « retour au début » (`RestartAction`, flèche circulaire dessinée en Canvas). Quand elle a le focus, une bulle « Recommencer » s'affiche au-dessus (`Popup`). La case « Sous-titres » n'est plus poussée hors de l'écran. Comportement inchangé (relance depuis 0:00).
+
+
+## Version 1.2.3 : bouton FR dans le lecteur
+
+- Contrôles du lecteur (ExoPlayer et mpv) : nouveau bouton « FR », à droite de « CC ». Il force la piste audio française sans quitter le lecteur.
+- ExoPlayer : si une piste française lisible est dans le flux, bascule immédiate (`TrackSelectionOverride`). Sinon (flux converti par le serveur, ou piste que la TV ne décode pas) le flux est relancé avec `audioStreamID` français et conversion AAC, à la même position (`replaceMediaItem` + `seekTo`). `ClipPlay.frUrl/frStreamId/frCodec/partId` sont préparés par `buildQueue`. Les rapports « i » et la correction de proportions tiennent compte du flux relancé (`effective`).
+- mpv : bascule immédiate de piste (`aid`) si le fichier contient une piste française ; sinon message « Aucune piste française dans ce flux » (pas de relance du flux en mpv).
+- Sans piste française : message « Aucune piste française dans ce film ». Le bouton ne fait rien hors du film (bonus, bandes-annonces).
+- `MovieFacts.frenchStream` : piste de langue « fr » (la sélectionnée du serveur, sinon celle qui a le plus de canaux), à défaut une piste dont le titre dit français (étiquette de langue absente ou fausse). Le choix de langue par défaut s'en sert aussi quand aucune piste n'est étiquetée « fr ».
+- `PlexClient.setAudioStream` : PUT `/library/parts/{id}?audioStreamID=&allParts=1`, pour que le serveur et le client officiel gardent la piste choisie.
+
+
+## Version 1.2.4 : bouton ST corrigé, bouton œil retiré
+
+- Le bouton « CC » devient « ST » (sous-titres). Correction : la rotation cherchait le sous-titre actuel dans tous les réglages de pistes du lecteur, y compris le choix audio posé au lancement ; elle retombait donc toujours sur le premier sous-titre. Elle ne regarde plus que les sous-titres : Sans → chaque piste → Sans.
+- Message à chaque appui (« Sous-titres : Français (forcés) », « désactivés »), et « Aucun sous-titre disponible dans ce flux » quand ExoPlayer n'a aucune piste lisible (flux converti, sous-titres image non lus par la TV). Même message côté mpv.
+- Bouton « œil » (masquer les commandes) retiré des deux lecteurs : Retour fait la même chose. Le bouton Stop est conservé.
+
+
+## Version 1.2.5 : liste des pistes audio (appui long sur FR)
+
+- Appui maintenu 3 secondes sur « FR » : liste des pistes audio du film (`AudioMenu`, au centre de l'écran), libellé « Français · AC3 5.1 » (langue, codec, canaux), ✓ sur la piste en cours. Haut/bas pour choisir, OK pour valider, Retour pour fermer. Un appui bref sur FR garde son rôle (forcer le français). `PlayerIcon` gère l'appui long (`onLongPress`, 3 s ; relâchement avant = appui bref).
+- `ClipPlay.audios` (`AudioChoice(id, label, url, current)`) est préparé par `buildQueue` : pour chaque piste, le flux converti correspondant (`StreamUrlFactory.transcode` avec `audioStreamID`).
+- ExoPlayer : lecture directe avec autant de pistes que Plex et piste lisible → bascule immédiate dans le flux ; sinon flux relancé avec cette piste, à la même position (`relaunch`). mpv : la n-ième piste Plex est la n-ième piste audio de mpv (`aid`) ; si les nombres diffèrent, message « Choix de piste impossible dans ce flux ».
+- Le choix est enregistré sur le serveur (`setAudioStream`). La liste ne s'ouvre que pendant le film.
+
+
+## Version 1.2.6 : distribution des épisodes, nombre de séries
+
+- Onglet « Bibliothèque » d'une bibliothèque de séries : le nombre de séries s'affiche en orange (couleur Signal) à côté du titre (`ShellScreen.count`, fourni par `MainActivity` = `items.size`).
+- Fiche d'un épisode : rangée « Distribution » (`CastRow`, `ui/detail/Cast.kt`) sous le résumé (3 lignes au lieu de 6 quand il y a une distribution). Photos octogonales (`OctagonShape`), nom en blanc, personnage en orange, initiales si pas de photo. D'abord les acteurs principaux (rôles `Role` de la série), un trait, puis les invités (rôles de l'épisode absents des principaux). 15 + 15 au plus. Photos via `PosterStore` (cache disque), URL `https://…` directes sans jeton serveur.
+- OK sur une pastille : `ActorDialog` (grand popup). Photo, nom, personnage, biographie, œuvres principales en pastilles carrées ; haut/bas font défiler ; Retour ferme (géré par la racine de `MovieDetailScreen`) et rend le focus à la pastille.
+- Données : `Metadata.Role` (`RoleItem`: id, tag, tagKey, role, thumb) ; `PlexClient.person` interroge d'abord le service Discover de Plex (`https://discover.provider.plex.tv/library/people/{tagKey}` pour la biographie, `/media` pour les œuvres) avec le jeton du compte, en best-effort (non vérifié sur un vrai compte). À défaut, les œuvres viennent du serveur : `/library/sections/{clé}/all?actor={id du rôle}` dans chaque bibliothèque (intitulé « Dans votre bibliothèque »). Sans biographie : « Biographie indisponible pour cet acteur. ».
+
+
+## Version 1.2.7 : mise à jour réparée, barre de progression
+
+- Symptôme : « Téléchargement… » puis plus rien. Cause : `UpdateReceiver` ignorait tout résultat d'Android autre que « confirmation demandée » (échec, refus, absence de fenêtre) sans rien afficher.
+- `UpdateReceiver` traite maintenant tous les statuts : confirmation (lance la fenêtre, message d'état), succès, et échec (message d'Android en bulle + dans Paramètres, « Installation refusée : … »). `UpdateBus` relaie ces messages à l'écran (`MainActivity`, `DisposableEffect`).
+- Plan B : si Android n'a montré aucune fenêtre 8 s après l'envoi de la session, l'appli ouvre l'installateur classique (`ACTION_VIEW` sur l'APK via `FileProvider`, autorité `<appId>.updates`, `res/xml/update_paths.xml`).
+- `KeepOpen.on` est posé dès le début du téléchargement (et plus seulement à l'installation). Le téléchargement a un délai de lecture de 30 s et vérifie la taille reçue (erreur lisible au lieu d'un blocage).
+- Barre de progression fine (4 dp, verte) sous « Téléchargement… » dans la fenêtre de démarrage (`UpdateDialog`) et sous la pastille Mise à jour dans Paramètres (`ThinBar`). `AppUpdate.download` renvoie la progression.
+
+
+## Version 1.2.8 : version de test de la mise à jour
+
+- Seul changement visible : la pastille « Mise à jour : 1.2.8 » de Paramètres s'affiche en orange (couleur Signal) quand aucun message d'état n'est en cours. Version publiée pour tester la mise à jour 1.2.7 → 1.2.8.
+
+
+## Version 1.2.9 : mise à jour chronométrée
+
+- Diagnostic d'un téléchargement jugé très lent. `AppUpdate.fetchAndInstall` (téléchargement + remise à Android) remplace le code dupliqué de `MainActivity` (écran de démarrage et Paramètres).
+- Pendant le téléchargement : texte « 23 / 72 Mo · 4,1 Mo/s » sous la barre verte ; puis « Préparation de l'installation… » pendant la session d'installation Android.
+- À la fin, le message d'état de Paramètres porte les durées : « Confirmez l'installation à l'écran (reçu en X s, préparé en Y s) » (`UpdateBus.timing`).
+
+
+## Version 1.2.91 : copie de la 1.2.9 (test de mise à jour chronométrée)
+
+- Aucun changement de code. Version plus récente que la 1.2.9 (91 > 9 dans la comparaison numérique de `AppUpdate.newer`) pour tester la mise à jour 1.2.9 → 1.2.91 et lire les vitesses/durées affichées.
+- Observation de l'utilisateur sur la 1.2.8 : le téléchargement démarre très vite puis ralentit de plus en plus à partir du premier quart.
+
+
+## Version 1.2.92 : téléchargement de la mise à jour, client dédié et mesures
+
+- Constat (1.2.9) : débit de 15 Mo/s au départ, puis 2, 1, 0,2 Mo/s ; ce n'est pas le disque ni le Wi-Fi (la TV mesure 80 Mo/s ailleurs, et les anciennes mises à jour étaient très rapides).
+- `AppUpdate.download` utilise un client OkHttp dédié (`downloader`) : HTTP/1.1 seulement, pool de connexions et file d'attente propres (plus partagés avec les affiches et les bibliothèques), tampon de 256 Ko.
+- `DownloadStats` : protocole, serveur final (après redirection), temps cumulé de lecture réseau et d'écriture disque, vitesse de pointe et vitesse sur les 2 dernières secondes.
+- Texte de progression : « 23 / 72 Mo · 4,1 Mo/s (moyenne 5,0) · http/1.1 ». Message final de Paramètres : durées reçu/préparé, réseau/disque, pointe/fin, protocole, serveur, et « débit réseau limité côté serveur » si la fin est 4 fois plus lente que la pointe avec le réseau dominant.
+- Plan B prévu si le ralentissement persiste : héberger l'APK sur guilard.com (URL fixe + fichier texte de version) ou télécharger en morceaux parallèles (en-têtes Range).
+
+
+## Version 1.2.93 : copie de la 1.2.92 (test de mise à jour)
+
+- Aucun changement de code. Sert à tester la mise à jour 1.2.92 → 1.2.93 avec le client de téléchargement dédié et ses mesures.
+
+
+## Version 1.2.94 : mises à jour depuis guilard.com
+
+- Constat : le téléchargement depuis GitHub est bridé chez l'utilisateur (0,3 Mo/s même sur son PC), ce qui n'est pas dû à l'appli.
+- `AppUpdate.latest` lit d'abord `https://guilard.com/dl/version.txt` (une ligne, ex. `1.2.95`, avec horodatage anti-cache). Si une version plus récente est annoncée, l'APK est téléchargé sur `https://guilard.com/dl/plexiplay.apk` (`UpdateOffer.fromServer`). Si le serveur ne répond pas correctement (réseau, code HTTP, texte invalide), retombée sur l'API GitHub comme avant. Si le serveur répond « pas plus récent », on s'arrête là.
+- Si le téléchargement depuis le serveur échoue, l'appli retente sur GitHub (message « Serveur indisponible, téléchargement depuis GitHub… »).
+- `checkApk` : après téléchargement, le paquet est lu (`getPackageArchiveInfo`) ; refus si ce n'est pas `tv.plexiplay.app`, si la version ne correspond pas à `version.txt`, ou si elle n'est pas plus récente que la version installée (évite une boucle de mises à jour).
+- Publication à chaque version : déposer d'abord `plexiplay.apk`, puis mettre à jour `version.txt` (une seule ligne, sans « v »).
+
+
+## Version 1.2.95 : copie de la 1.2.94 (test de mise à jour depuis guilard.com)
+
+- Aucun changement de code. Sert à tester la mise à jour 1.2.94 → 1.2.95 via `https://guilard.com/dl/version.txt` et `plexiplay.apk`.
+
+
+## Version 1.3.0 : copie de la 1.2.95 (test de la routine de dépôt sur guilard.com)
+
+- Aucun changement de code. Sert à tester la mise à jour 1.2.95 → 1.3.0 avec la routine manuelle : `plexiplay.apk` d'abord, `version.txt` (`1.3.0`) ensuite, dans `https://guilard.com/dl/`.
+
+
+## Nouveau dépôt « plexiplay » (ligne de développement), à partir de la 1.3.0
+
+- Ce dépôt reprend le code de `plexiplay-clone` 1.3.0 en un seul commit (sans historique). `plexiplay-clone` reste figé sur la version stable ; l'historique complet y est conservé.
+- Seul changement de code : le secours GitHub de la mise à jour (`AppUpdate.githubLatest`) lit désormais `https://api.github.com/repos/Kahenis/plexiplay/releases/latest`.
+- Les mises à jour automatiques passent d'abord par `https://guilard.com/dl/version.txt` (canal stable, dossier `/dl/`). Les APK de développement sont installés à la main ; pas de canal de développement sur le serveur.
+- Même identifiant (`tv.plexiplay.app`) et même clé de signature (`signing/debug.keystore`, publique) : une version remplace l'autre sur la TV, elles ne coexistent pas.
