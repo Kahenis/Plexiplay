@@ -371,3 +371,9 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Même fonctionnement que pour les épisodes : rangée « Distribution » (`CastRow`) sous le résumé de la fiche film, photos octogonales, nom, personnage ; OK sur une pastille ouvre `ActorDialog` (biographie, œuvres), Retour referme.
 - Film : les acteurs (`Metadata.Role` du film, 15 au plus) sont tous des « principaux » ; pas d'invités ni de séparateur. Le résumé passe à 3 lignes quand la distribution existe, comme pour un épisode.
 - `MainActivity` : la fiche film reçoit maintenant `posters` (cache d'images) et `accountToken` (biographies Discover), comme la fiche épisode. Les bibliothèques de vidéos personnelles lancent la lecture sans fiche et ne sont pas concernées.
+
+
+## Version 1.3.2 : résumé complet en popup
+
+- Fiches film et épisode (`MovieDetailScreen`) : le texte du résumé est sélectionnable (cadre `FocusRing` au focus). OK ouvre `SummaryDialog` (`ui/detail/Cast.kt`) : grand popup au style de la fiche acteur, titre, sous-titre (série + S/E, ou accroche du film), résumé complet défilant (haut/bas). Retour referme le popup en premier (avant la fiche acteur et le menu), puis le focus revient au résumé.
+- Toujours sélectionnable, même quand le résumé tient en 3 lignes (comportement prévisible). Fiches de séries (`SeriesScreen`) non modifiées.

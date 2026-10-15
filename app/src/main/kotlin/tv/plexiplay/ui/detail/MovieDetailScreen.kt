@@ -101,6 +101,20 @@ fun MovieDetailScreen(
     var actor by remember(seed.ratingKey) { mutableStateOf<CastEntry?>(null) }
     var person by remember(seed.ratingKey) { mutableStateOf<tv.plexiplay.plex.PersonInfo?>(null) }
     val castFocus = remember { FocusRequester() }
+    // Résumé complet : OK sur le texte du résumé ouvre un grand popup ; Retour le referme et rend le focus au résumé.
+    var summaryOpen by remember(seed.ratingKey) { mutableStateOf(false) }
+    var summaryFocused by remember { mutableStateOf(false) }
+    val summaryFocus = remember { FocusRequester() }
+    var summaryWasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(summaryOpen) {
+        if (summaryOpen) {
+            summaryWasOpen = true
+        } else if (summaryWasOpen) {
+            summaryWasOpen = false
+            delay(60)
+            runCatching { summaryFocus.requestFocus() }
+        }
+    }
     val roleImages: (String) -> List<String> = { path ->
         when {
             path.isBlank() -> emptyList()
@@ -228,7 +242,7 @@ fun MovieDetailScreen(
             .screenBackground()
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
-                    if (actor != null) actor = null else if (menu != null) menu = null else onClose()
+                    if (summaryOpen) summaryOpen = false else if (actor != null) actor = null else if (menu != null) menu = null else onClose()
                     true
                 } else false
             },
@@ -311,7 +325,21 @@ fun MovieDetailScreen(
                     lineHeight = 20.sp,
                     maxLines = if (cast.isNotEmpty() && posters != null) 3 else 6,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .focusRequester(summaryFocus)
+                        .onFocusChanged { summaryFocused = it.isFocused }
+                        .onPreviewKeyEvent {
+                            if (it.type == KeyEventType.KeyUp && (it.key == Key.DirectionCenter || it.key == Key.Enter)) {
+                                summaryOpen = true
+                                true
+                            } else false
+                        }
+                        .then(
+                            if (summaryFocused) Modifier.border(2.dp, FocusRing, RoundedCornerShape(6.dp)) else Modifier,
+                        )
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                        .focusable(),
                 )
                 if (cast.isNotEmpty() && posters != null) {
                     CastRow(
@@ -383,6 +411,19 @@ fun MovieDetailScreen(
                 }
                 menu = null
             }
+        }
+        if (summaryOpen) {
+            SummaryDialog(
+                title = movie.title,
+                subtitle = if (movie.type == "episode") {
+                    listOf(movie.grandparentTitle, if (movie.parentIndex > 0 && movie.index > 0) "S${movie.parentIndex} E${movie.index}" else "")
+                        .filter { it.isNotBlank() }
+                        .joinToString("  ·  ")
+                } else {
+                    movie.tagline
+                },
+                summary = movie.summary,
+            )
         }
         val openActor = actor
         if (openActor != null && posters != null) {

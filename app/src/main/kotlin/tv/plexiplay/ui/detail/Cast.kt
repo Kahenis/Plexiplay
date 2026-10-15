@@ -296,3 +296,60 @@ fun ActorDialog(
         }
     }
 }
+
+
+/** Grand popup du résumé complet : défile avec haut/bas, Retour referme (géré par l'écran). */
+@Composable
+fun SummaryDialog(title: String, subtitle: String, summary: String) {
+    val focus = remember { FocusRequester() }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xD9000000))
+            .focusRequester(focus)
+            .onPreviewKeyEvent { event ->
+                val dpad = event.key == Key.DirectionUp || event.key == Key.DirectionDown ||
+                    event.key == Key.DirectionLeft || event.key == Key.DirectionRight ||
+                    event.key == Key.DirectionCenter || event.key == Key.Enter
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionDown -> scope.launch { scroll.animateScrollBy(160f) }
+                        Key.DirectionUp -> scope.launch { scroll.animateScrollBy(-160f) }
+                        else -> Unit
+                    }
+                }
+                dpad
+            }
+            .focusable(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 110.dp, vertical = 44.dp)
+                .background(Panel, RoundedCornerShape(14.dp))
+                .border(1.dp, Color(0xFF3A4450), RoundedCornerShape(14.dp))
+                .padding(28.dp),
+        ) {
+            Text(title, color = Paper, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, color = Signal, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("RÉSUMÉ", color = Color(0xFF9AA3AD), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)) {
+                Text(
+                    summary.ifBlank { "Résumé indisponible." },
+                    color = Color(0xFFD5DBE2), fontSize = 17.sp, lineHeight = 25.sp,
+                    modifier = Modifier.padding(top = 6.dp, end = 12.dp),
+                )
+            }
+            Text(
+                "Haut / bas : faire défiler    Retour : fermer",
+                color = Color(0xFF6F7A88), fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
+}
