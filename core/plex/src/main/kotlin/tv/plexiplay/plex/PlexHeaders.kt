@@ -4,7 +4,7 @@ import okhttp3.Request
 
 object PlexHeaders {
     const val PRODUCT = "Plexiplay"
-    const val VERSION = "1.3.2"
+    const val VERSION = "1.3.3"
 
     fun apply(
         builder: Request.Builder,

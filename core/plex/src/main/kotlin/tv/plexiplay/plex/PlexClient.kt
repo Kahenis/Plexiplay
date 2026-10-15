@@ -295,6 +295,9 @@ class PlexClient(
             fun cloud(path: String): List<JsonObject> {
                 val request = Request.Builder().url("https://discover.provider.plex.tv/library/people/" + java.net.URLEncoder.encode(key, "UTF-8") + path).get()
                     .let { PlexHeaders.apply(it, clientId, accountToken, deviceName) }
+                    // Biographie et titres en français quand Plex les a (sinon sa langue par défaut).
+                    .header("X-Plex-Language", "fr")
+                    .header("Accept-Language", "fr-FR,fr;q=0.9")
                     .build()
                 val raw = quick.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) throw IOException("Plex ${response.code}")

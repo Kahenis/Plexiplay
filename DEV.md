@@ -377,3 +377,10 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 
 - Fiches film et épisode (`MovieDetailScreen`) : le texte du résumé est sélectionnable (cadre `FocusRing` au focus). OK ouvre `SummaryDialog` (`ui/detail/Cast.kt`) : grand popup au style de la fiche acteur, titre, sous-titre (série + S/E, ou accroche du film), résumé complet défilant (haut/bas). Retour referme le popup en premier (avant la fiche acteur et le menu), puis le focus revient au résumé.
 - Toujours sélectionnable, même quand le résumé tient en 3 lignes (comportement prévisible). Fiches de séries (`SeriesScreen`) non modifiées.
+
+
+## Version 1.3.3 : biographies des acteurs en français (plan A)
+
+- Constat : les biographies (service Discover de Plex) arrivaient en anglais, l'appli ne demandait aucune langue.
+- `PlexClient.person` : les requêtes Discover portent maintenant `X-Plex-Language: fr` et `Accept-Language: fr-FR,fr;q=0.9` (biographie et titres des œuvres). Non vérifié sur un vrai compte : si Plex n'a pas de biographie française pour un acteur, il renvoie sa langue par défaut et l'affichage reste inchangé.
+- Plan B non réalisé (à voir si besoin) : repli sur le résumé de Wikipédia en français (`fr.wikipedia.org/api/rest_v1/page/summary/{nom}`) quand la biographie est anglaise ou vide.
