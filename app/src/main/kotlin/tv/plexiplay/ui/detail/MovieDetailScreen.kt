@@ -96,7 +96,7 @@ fun MovieDetailScreen(
     accountToken: String = "",
 ) {
     val context = LocalContext.current
-    // Distribution (épisodes) : principaux de la série puis invités de l'épisode ; fiche d'un acteur au clic.
+    // Distribution : épisodes = principaux de la série puis invités ; films = acteurs du film. Fiche d'un acteur au clic.
     var cast by remember(seed.ratingKey) { mutableStateOf<List<CastEntry>>(emptyList()) }
     var actor by remember(seed.ratingKey) { mutableStateOf<CastEntry?>(null) }
     var person by remember(seed.ratingKey) { mutableStateOf<tv.plexiplay.plex.PersonInfo?>(null) }
@@ -184,6 +184,9 @@ fun MovieDetailScreen(
             val main = show?.Role.orEmpty().take(15)
             val guests = full.Role.filter { guest -> main.none { it.tag == guest.tag } }.take(15)
             cast = main.map { CastEntry(it, false) } + guests.map { CastEntry(it, true) }
+        } else {
+            // Film : les acteurs du film, tous « principaux » (pas d'invités).
+            cast = full.Role.take(15).map { CastEntry(it, false) }
         }
         watched = full.viewCount > 0
         themeUrl = client.fileUrl(server, themePath?.takeIf { it.isNotBlank() } ?: full.theme)

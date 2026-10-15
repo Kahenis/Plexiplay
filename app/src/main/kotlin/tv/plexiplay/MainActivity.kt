@@ -711,6 +711,8 @@ private fun App(
             onClose = closeDetail,
             notice = playError,
             themeVolume = themeVolume / 100f,
+            posters = posters,
+            accountToken = token.orEmpty(),
         )
     }
     val openedSeries = series

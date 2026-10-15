@@ -364,3 +364,10 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Seul changement de code : le secours GitHub de la mise à jour (`AppUpdate.githubLatest`) lit désormais `https://api.github.com/repos/Kahenis/plexiplay/releases/latest`.
 - Les mises à jour automatiques passent d'abord par `https://guilard.com/dl/version.txt` (canal stable, dossier `/dl/`). Les APK de développement sont installés à la main ; pas de canal de développement sur le serveur.
 - Même identifiant (`tv.plexiplay.app`) et même clé de signature (`signing/debug.keystore`, publique) : une version remplace l'autre sur la TV, elles ne coexistent pas.
+
+
+## Version 1.3.1 : distribution (photos des acteurs) sur la fiche d'un film
+
+- Même fonctionnement que pour les épisodes : rangée « Distribution » (`CastRow`) sous le résumé de la fiche film, photos octogonales, nom, personnage ; OK sur une pastille ouvre `ActorDialog` (biographie, œuvres), Retour referme.
+- Film : les acteurs (`Metadata.Role` du film, 15 au plus) sont tous des « principaux » ; pas d'invités ni de séparateur. Le résumé passe à 3 lignes quand la distribution existe, comme pour un épisode.
+- `MainActivity` : la fiche film reçoit maintenant `posters` (cache d'images) et `accountToken` (biographies Discover), comme la fiche épisode. Les bibliothèques de vidéos personnelles lancent la lecture sans fiche et ne sont pas concernées.
