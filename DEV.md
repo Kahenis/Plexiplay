@@ -422,3 +422,11 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Le bouton « i » affiche en plus un bloc en haut à droite : version de l'appli et moteur, flux direct/converti/relancé, paramètres envoyés à Plex (`subtitleStreamID`, `subtitles`, `videoResolution`, `mediaIndex`, `audioStreamID`…), état du bouton ST (départ, choisi, incrusté, annexe, mode, taille de la liste, dernier message), pistes texte reçues par ExoPlayer (langue, type, indicateurs, sélectionnée, non lue), versions du film et pistes de sous-titres vues par Plex (id, codec, langue, forcé, sélectionné, externe).
 - `ClipPlay.diag` rempli dans `buildQueue` ; composable `SubDiagnostic` (PlayerScreen/MpvPlayerScreen). Aucun jeton n'est affiché.
 - Modules `playback` et `players` déverrouillés puis reverrouillés, hash mis à jour.
+
+## Version 1.3.9 : le choix de sous-titres est enregistré sur le serveur
+- Cause trouvée avec le diagnostic 1.3.8 (photo « i » chez une amie, même serveur et même appli) : la piste de sous-titres « sélectionnée » côté Plex pour le compte (ici l'anglais) était ajoutée au flux converti (piste CEA-608 dans la vidéo) malgré `subtitleStreamID=0` et `subtitles=none`.
+- `PlexClient.setSubtitleStream` : `PUT /library/parts/{id}?subtitleStreamID=…&allParts=1` (0 = aucune), comme `setAudioStream` pour l'audio.
+- `buildQueue` : avant le lancement, si la piste sélectionnée sur le serveur diffère du choix de départ de l'appli, elle est enregistrée (le panneau « i » indique « sélection serveur : #a → #b »).
+- Lecteurs ExoPlayer et mpv : chaque choix ST (Sans, piste, fichier externe) est enregistré ; pour un flux converti, l'enregistrement précède la relance du flux.
+- Effet voulu : la sélection de sous-titres du compte pour ce fichier est celle de l'appli, comme avec les apps Plex officielles.
+- Modules `playback` et `players` déverrouillés puis reverrouillés, hash mis à jour.

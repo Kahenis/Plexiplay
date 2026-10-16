@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,7 @@ import io.github.yuroyami.libmpvkt.view.MpvView
 import io.github.yuroyami.libmpvkt.view.SurfaceType
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import tv.plexiplay.plex.preroll.ClipKind
 
 private fun sameLanguage(track: String?, wanted: String): Boolean {
@@ -114,7 +116,9 @@ internal fun MpvPlayerScreen(
     onExit: () -> Unit,
     onRegisterBack: ((() -> Boolean)?) -> Unit,
     onAudioChosen: (ClipPlay) -> Unit = {},
+    onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
 ) {
+    val scope = rememberCoroutineScope()
     var notice by remember { mutableStateOf("") }
     var audioMenu by remember { mutableStateOf(false) }
     var subMenu by remember { mutableStateOf(false) }
@@ -326,6 +330,7 @@ internal fun MpvPlayerScreen(
         if (position <= 0) {
             core.command(MpvCommands.set(MpvProperties.Sid, TrackSelection.No))
             pickedSub[pos] = 0
+            scope.launch { onSubtitleChosen(clip, 0) }
             notice = "Sous-titres : désactivés"
             return
         }
@@ -339,6 +344,7 @@ internal fun MpvPlayerScreen(
                 MpvCommands.subAdd(sub.url, SubAddMode.Select, sub.language.ifBlank { "und" }, sub.language.ifBlank { "und" }),
             )
             pickedSub[pos] = sub.id
+            scope.launch { onSubtitleChosen(clip, sub.id) }
             notice = "Sous-titres : ${sub.label}"
             return
         }
@@ -355,6 +361,7 @@ internal fun MpvPlayerScreen(
         }
         core.command(MpvCommands.set(MpvProperties.Sid, TrackSelection.Id(match.id)))
         pickedSub[pos] = sub.id
+        scope.launch { onSubtitleChosen(clip, sub.id) }
         notice = "Sous-titres : ${sub.label}"
     }
     fun cycleSub() {

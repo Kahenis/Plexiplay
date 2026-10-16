@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +71,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import tv.plexiplay.player.AspectMode
 import tv.plexiplay.player.Engine
 import tv.plexiplay.player.PlayerKind
@@ -125,9 +127,10 @@ fun PlayerScreen(
     mpvMode: String = "light",
     formatFix: Boolean = true,
     onAudioChosen: (ClipPlay) -> Unit = {},
+    onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
 ) {
     if (playerKind == PlayerKind.MPV) {
-        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen)
+        MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen)
         return
     }
     var infoVisible by remember { mutableStateOf(false) }
@@ -159,6 +162,7 @@ fun PlayerScreen(
     val sidecarSub = remember { mutableMapOf<Int, Int>() }
     var subMenu by remember { mutableStateOf(false) }
     var pendingSub by remember { mutableStateOf<Int?>(null) }
+    val scope = rememberCoroutineScope()
     var audioMenu by remember { mutableStateOf(false) }
     var audioTag by remember { mutableStateOf("FR") }
     var menuIndex by remember { mutableIntStateOf(0) }
@@ -411,6 +415,7 @@ fun PlayerScreen(
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 .build()
+            scope.launch { onSubtitleChosen(clip, 0) }
             notice = "Sous-titres : désactivés"
             return
         }
@@ -419,6 +424,7 @@ fun PlayerScreen(
             sidecarSub[index] = wanted
             burnedSub[index] = 0
             notice = "Sous-titres : $label…"
+            scope.launch { onSubtitleChosen(clip, wanted) }
             reloadWithSidecar(index, clip, sub)
             return
         }
@@ -438,6 +444,7 @@ fun PlayerScreen(
                     .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                     .setOverrideForType(TrackSelectionOverride(track.group, listOf(track.index)))
                     .build()
+                scope.launch { onSubtitleChosen(clip, wanted) }
                 notice = "Sous-titres : $label"
                 return
             }
@@ -452,7 +459,14 @@ fun PlayerScreen(
         pickedSub[index] = wanted
         burnedSub[index] = wanted
         sidecarSub.remove(index)
-        relaunch(index, factory(audio, wanted), if (sub == null) "Sous-titres : désactivés…" else "Sous-titres : $label…")
+        val message = if (sub == null) "Sous-titres : désactivés…" else "Sous-titres : $label…"
+        val url = factory(audio, wanted)
+        notice = message
+        // Le choix est d'abord enregistré sur le serveur (sinon sa piste « sélectionnée » revient dans le flux), puis le flux est relancé.
+        scope.launch {
+            runCatching { onSubtitleChosen(clip, wanted) }
+            relaunch(index, url, message)
+        }
     }
     // Diagnostic des sous-titres pour le panneau « i » : ce qui est demandé à Plex, ce que reçoit ExoPlayer, l'état du bouton ST.
     fun subDiag(): String {

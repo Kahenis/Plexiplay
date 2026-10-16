@@ -282,6 +282,23 @@ class PlexClient(
     }
 
     /**
+     * Enregistre sur le serveur la piste de sous-titres choisie pour ce fichier (0 = aucune), comme le font les apps Plex :
+     * sans cela, la piste « sélectionnée » du compte est ajoutée au flux converti malgré la demande « aucun ».
+     * Renvoie vrai si le serveur a accepté.
+     */
+    fun setSubtitleStream(server: ServerEndpoint, partId: Long, streamId: Int): Boolean {
+        if (partId <= 0L || streamId < 0) return false
+        val url = "${server.uri}/library/parts/$partId".toHttpUrl().newBuilder()
+            .addQueryParameter("subtitleStreamID", streamId.toString())
+            .addQueryParameter("allParts", "1")
+            .build()
+        val request = Request.Builder().url(url).put(ByteArray(0).toRequestBody(null))
+            .let { PlexHeaders.apply(it, clientId, server.accessToken, deviceName) }
+            .build()
+        return http.newCall(request).execute().use { it.isSuccessful }
+    }
+
+    /**
      * Fiche d'un acteur : biographie et œuvres principales. Le service « Discover » de Plex (compte plex.tv) est
      * interrogé d'abord, au mieux ; sinon les œuvres sont celles des bibliothèques du serveur où il joue.
      */

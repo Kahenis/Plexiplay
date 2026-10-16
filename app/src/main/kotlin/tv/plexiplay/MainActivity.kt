@@ -784,6 +784,10 @@ private fun App(
                 }
             },
             onExit = { clips = null },
+            onSubtitleChosen = { clip, id ->
+                val active = server
+                if (active != null) withContext(Dispatchers.IO) { runCatching { client.setSubtitleStream(active, clip.partId, id) } }
+            },
             onAudioChosen = { clip ->
                 val active = server
                 if (active != null) Thread { runCatching { client.setAudioStream(active, clip.partId, clip.frStreamId) } }.start()
@@ -1249,9 +1253,20 @@ private fun buildQueue(
         } else {
             emptyList()
         }
+        // Le choix de sous-titres de départ est enregistré sur le serveur avant le lancement : sinon la piste « sélectionnée » du compte
+        // (choisie un jour avec une autre appli Plex) est ajoutée au flux converti, même quand l'appli demande « aucun ».
+        val serverSub = picked?.Part?.flatMap { it.Stream }?.firstOrNull { it.streamType == 3 && it.selected }?.id ?: 0
+        val wantedSub = chosenSub?.id?.toIntOrNull() ?: 0
+        val syncNote = if (featureItem && numeric && serverSub != wantedSub) {
+            val done = runCatching { client.setSubtitleStream(server, MovieFacts.partId(meta), wantedSub) }.getOrDefault(false)
+            "sélection serveur : #$serverSub → #$wantedSub (" + (if (done) "enregistrée" else "ÉCHEC") + ")"
+        } else {
+            "sélection serveur : #$serverSub (inchangée)"
+        }
         // Diagnostic (panneau « i ») : versions du film et pistes de sous-titres telles que Plex les décrit.
         val diagText = if (featureItem) {
             val rows = mutableListOf("Versions : ${meta.Media.size} · lue : #${meta.Media.indexOf(picked)} · réglage ST départ : \"$subtitleMode\" · choisi : ${chosenSub?.id ?: "aucun"}")
+            rows += syncNote
             rows += "Plan : ${delivery.name} · baisse de résolution : ${if (downscale) "oui (cible $target, source ${nativeHeight ?: "?"})" else "non"}"
             meta.Media.forEachIndexed { number, media ->
                 val subs = media.Part.flatMap { it.Stream }.filter { it.streamType == 3 }
