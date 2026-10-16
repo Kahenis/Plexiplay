@@ -384,3 +384,15 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Constat : les biographies (service Discover de Plex) arrivaient en anglais, l'appli ne demandait aucune langue.
 - `PlexClient.person` : les requêtes Discover portent maintenant `X-Plex-Language: fr` et `Accept-Language: fr-FR,fr;q=0.9` (biographie et titres des œuvres). Non vérifié sur un vrai compte : si Plex n'a pas de biographie française pour un acteur, il renvoie sa langue par défaut et l'affichage reste inchangé.
 - Plan B non réalisé (à voir si besoin) : repli sur le résumé de Wikipédia en français (`fr.wikipedia.org/api/rest_v1/page/summary/{nom}`) quand la biographie est anglaise ou vide.
+
+
+## Version 1.3.4 : bouton ST refait (cycle + liste), appui long 2 s
+
+- Modules `playback` et `players` déverrouillés pour cette version (buildQueue, PlayerScreen, MpvPlayerScreen, StreamUrlFactory), puis reverrouillés avec de nouveaux hash.
+- Appui long : 2 secondes (au lieu de 3) sur FR (liste des pistes audio) et sur ST (liste des sous-titres). `PlayerIcon` : `delay(2000)`.
+- Cause du bouton ST « qui ne marche pas » : il ne regardait que les pistes de sous-titres vues par le lecteur dans le flux en cours. Flux converti (sous-titres absents), sous-titres image (PGS) non lus par la TV, fichiers externes non chargés : aucune piste trouvée.
+- Nouveau : `ClipPlay.subs` (`SubChoice`: id Plex, libellé, langue, forcé, codec, externe, `url` du fichier pour un externe textuel), `subStart` (choix de départ), `audioStart`, `streamFor(audio, sous-titre)` (fabrique de flux converti ; sous-titre > 0 ⇒ `subtitles=burn`, ajouté à `StreamUrlFactory.transcode(burnSubtitles)`). Rempli par `buildQueue`.
+- ExoPlayer, un clic sur ST : sous-titre suivant (Sans → chaque piste Plex → Sans), message immédiat, application 0,9 s après le dernier clic (évite de relancer le flux à chaque clic). `chooseSub` : lecture directe sans relance → coupe le texte (Sans) ; fichier externe textuel → l'élément est rechargé avec le fichier (`reloadWithSidecar`, même position) ; piste intégrée lisible → `TrackSelectionOverride` ; sinon (flux converti ou sous-titre image) → flux relancé avec `subtitleStreamID` + `subtitles=burn` (sous-titre gravé dans l'image par le serveur, même position). `effective()` tient compte du choix. Le changement de piste audio (FR ou liste) garde le sous-titre choisi (`audioUrl`, incrusté).
+- Appui long 2 s sur ST : liste « Sous-titres » (`AudioMenu` avec titre, « Sans » en premier, ✓ sur le choix en cours).
+- mpv : même interface. Fichier externe : `sub-add` ; piste intégrée : n-ième piste Plex = n-ième piste mpv quand les nombres concordent, sinon langue + forcé. Flux converti en mpv : message « Choix de sous-titres impossible dans ce flux » (pas de relance en mpv).
+- Non vérifié sur une vraie TV. Le choix de sous-titres n'est pas enregistré sur le serveur (seul l'audio l'est).

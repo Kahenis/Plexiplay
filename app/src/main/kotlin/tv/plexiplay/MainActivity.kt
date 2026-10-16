@@ -45,6 +45,7 @@ import tv.plexiplay.ui.detail.MovieDetailScreen
 import tv.plexiplay.ui.detail.MovieFacts
 import tv.plexiplay.ui.detail.SeriesScreen
 import tv.plexiplay.ui.player.AudioChoice
+import tv.plexiplay.ui.player.SubChoice
 import tv.plexiplay.ui.player.ClipPlay
 import tv.plexiplay.ui.player.PlayerScreen
 import tv.plexiplay.ui.settings.SettingsScreen
@@ -1209,20 +1210,34 @@ private fun buildQueue(
         }
         // Version « français » du même flux, pour le bouton FR du lecteur (relance à la même position).
         val frStream = if (featureItem && numeric) MovieFacts.frenchStream(meta) else null
-        fun streamFor(audioId: Int) = StreamUrlFactory.transcode(
+        fun streamFor(audioId: Int, subId: Int = chosenSub?.id?.toIntOrNull() ?: 0, burn: Boolean = false) = StreamUrlFactory.transcode(
             server.uri,
             meta.ratingKey,
             server.accessToken,
             clientId,
             audioStreamId = audioId,
-            subtitleStreamId = chosenSub?.id?.toIntOrNull() ?: 0,
+            subtitleStreamId = subId,
             mediaIndex = meta.Media.indexOf(picked).let { if (it < 0) 0 else it },
             videoResolution = if (downscale) target.toString() else null,
             maxVideoBitrate = if (downscale) bitrateFor(target) else null,
             videoCodec = if (exo && downscale) "h264" else null,
             audioCodec = if (exo) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
             directStream = !downscale && videoCopy,
+            burnSubtitles = burn,
         )
+        // Sous-titres pour le bouton ST : la liste de Plex, avec le fichier à charger pour les sous-titres externes textuels.
+        val textCodecs = setOf("srt", "ass", "ssa", "vtt", "subrip")
+        val subChoices = if (featureItem && numeric) {
+            MovieFacts.subtitleOptions(meta).filter { it.id != "off" }.mapNotNull { option ->
+                val id = option.id.toIntOrNull() ?: return@mapNotNull null
+                SubChoice(
+                    id, option.label, option.language, option.forced, option.codec, option.external,
+                    if (option.external && option.codec.lowercase() in textCodecs) client.fileUrl(server, option.key).orEmpty() else "",
+                )
+            }
+        } else {
+            emptyList()
+        }
         val frUrl = if (frStream != null) streamFor(frStream.id) else ""
         // Liste des pistes audio pour l'appui long sur FR : chaque piste a son flux converti prêt.
         val audioChoices = if (featureItem && numeric) {
@@ -1259,6 +1274,10 @@ private fun buildQueue(
             frStreamId = frStream?.id ?: 0,
             frCodec = frStream?.codec.orEmpty(),
             partId = if (featureItem) MovieFacts.partId(meta) else 0L,
+            subs = subChoices,
+            subStart = chosenSub?.id?.toIntOrNull() ?: 0,
+            audioStart = audioId ?: 0,
+            streamFor = if (featureItem && numeric) { a, sub -> streamFor(a, sub, sub > 0) } else null,
             sourceAspect = if (picked != null && picked.width > 0 && picked.height > 0) picked.width.toFloat() / picked.height else 0f,
             closeOnEnd = featureItem && feature.type == "movie",
             startMs = if (resume && featureItem) {

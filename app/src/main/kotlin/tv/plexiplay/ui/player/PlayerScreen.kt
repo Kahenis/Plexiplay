@@ -99,6 +99,11 @@ data class ClipPlay(
     val frStreamId: Int = 0,
     val frCodec: String = "",
     val partId: Long = 0L,
+    /** Sous-titres du film (bouton ST) : liste de Plex, choix de départ (0 = aucun), piste audio de départ, et fabrique de flux converti (piste audio, sous-titre incrusté). */
+    val subs: List<SubChoice> = emptyList(),
+    val subStart: Int = 0,
+    val audioStart: Int = 0,
+    val streamFor: ((Int, Int) -> String)? = null,
 )
 
 internal enum class Glyph { Play, Pause, Rew10, Fwd10, Rew30, Fwd30, Subs, Fr, Info, Skip, Hide, Stop }
@@ -146,15 +151,33 @@ fun PlayerScreen(
     val reloadedUrl = remember { mutableMapOf<Int, String>() }
     val frInStream = remember { mutableSetOf<Int>() }
     val pickedAudio = remember { mutableMapOf<Int, Int>() }
+    // Bouton ST : sous-titre choisi (0 = aucun), incrusté par un flux relancé, ou fichier externe chargé à part, par numéro de lecture.
+    val pickedSub = remember { mutableMapOf<Int, Int>() }
+    val burnedSub = remember { mutableMapOf<Int, Int>() }
+    val sidecarSub = remember { mutableMapOf<Int, Int>() }
+    var subMenu by remember { mutableStateOf(false) }
+    var pendingSub by remember { mutableStateOf<Int?>(null) }
     var audioMenu by remember { mutableStateOf(false) }
     var menuIndex by remember { mutableIntStateOf(0) }
     fun effective(index: Int): ClipPlay? {
         val base = clips.getOrNull(index) ?: return null
         val url = reloadedUrl[index]
-        return when {
+        val current = when {
             url != null -> base.copy(audioLanguage = if (url == base.frUrl) "fr" else "", audioCodec = "", direct = false, url = url)
             index in frInStream -> base.copy(audioLanguage = "fr", audioCodec = base.frCodec)
             else -> base
+        }
+        val sub = pickedSub[index] ?: return current
+        val choice = base.subs.firstOrNull { it.id == sub }
+        return if (sub == 0 || choice == null || (burnedSub[index] ?: 0) > 0) {
+            current.copy(textMode = "off", subtitleUrl = "")
+        } else {
+            current.copy(
+                textMode = if (choice.forced) "forced" else "full",
+                textLanguage = choice.language,
+                subtitleCodec = choice.codec,
+                subtitleUrl = if (sidecarSub[index] == sub) choice.url else "",
+            )
         }
     }
     val player = remember {
@@ -222,6 +245,14 @@ fun PlayerScreen(
         player.prepare()
         player.playWhenReady = true
     }
+    // URL d'un flux relancé pour une autre piste audio : garde le sous-titre choisi avec ST (incrusté), sinon l'URL préparée.
+    fun audioUrl(index: Int, clip: ClipPlay, audioId: Int, fallback: String): String {
+        val sub = pickedSub[index]
+        val factory = clip.streamFor
+        if (sub == null || factory == null) return fallback
+        burnedSub[index] = sub
+        return factory(audioId, sub)
+    }
     fun forceFrench() {
         val index = player.currentMediaItemIndex
         val clip = clips.getOrNull(index) ?: return
@@ -260,7 +291,7 @@ fun PlayerScreen(
         }
         // La piste française n'est pas dans le flux en cours (flux converti, ou piste que la TV ne décode pas) :
         // on relance le flux avec cette piste, à la même position, sans quitter le lecteur.
-        relaunch(index, clip.frUrl, "Passage en français…")
+        relaunch(index, audioUrl(index, clip, clip.frStreamId, clip.frUrl), "Passage en français…")
         pickedAudio[index] = clip.frStreamId
         onAudioChosen(clip)
     }
@@ -302,9 +333,132 @@ fun PlayerScreen(
             return
         }
         frInStream.remove(index)
-        relaunch(index, choice.url, "Audio : ${choice.label}…")
+        relaunch(index, audioUrl(index, clip, choice.id, choice.url), "Audio : ${choice.label}…")
         pickedAudio[index] = choice.id
         onAudioChosen(clip.copy(frStreamId = choice.id))
+    }
+    fun subId(index: Int, clip: ClipPlay): Int = pickedSub[index] ?: clip.subStart
+    fun subPosition(index: Int, clip: ClipPlay): Int {
+        val id = subId(index, clip)
+        return if (id <= 0) 0 else (clip.subs.indexOfFirst { it.id == id } + 1)
+    }
+    fun subLabel(clip: ClipPlay, position: Int): String =
+        if (position <= 0) "désactivés" else clip.subs.getOrNull(position - 1)?.label.orEmpty()
+    // Fichier de sous-titres externe : l'élément est rechargé avec le fichier, à la même position, sans quitter le lecteur.
+    fun reloadWithSidecar(index: Int, clip: ClipPlay, sub: SubChoice) {
+        val position = player.currentPosition
+        selection[0] = -1
+        selection[1] = 0
+        val builder = MediaItem.Builder().setUri(clip.url).setMediaId(clip.ratingKey)
+        if (clip.url.contains(".m3u8")) builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        builder.setSubtitleConfigurations(
+            listOf(
+                MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(sub.url))
+                    .setMimeType(subtitleMime(sub.codec))
+                    .setLanguage(sub.language.ifBlank { "fr" })
+                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                    .build(),
+            ),
+        )
+        player.replaceMediaItem(index, builder.build())
+        player.seekTo(index, position)
+        player.prepare()
+        player.playWhenReady = true
+    }
+    fun chooseSub(position: Int) {
+        val index = player.currentMediaItemIndex
+        val clip = clips.getOrNull(index) ?: return
+        if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
+            notice = "Aucun sous-titre à choisir"
+            return
+        }
+        val sub = if (position <= 0) null else clip.subs.getOrNull(position - 1)
+        val wanted = sub?.id ?: 0
+        if (wanted == subId(index, clip)) {
+            notice = "Sous-titres déjà sur : " + subLabel(clip, position)
+            return
+        }
+        val label = subLabel(clip, position)
+        val inStream = clip.direct && reloadedUrl[index] == null
+        if (inStream && sub == null) {
+            pickedSub[index] = 0
+            sidecarSub.remove(index)
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            notice = "Sous-titres : désactivés"
+            return
+        }
+        if (inStream && sub != null && sub.url.isNotBlank()) {
+            pickedSub[index] = wanted
+            sidecarSub[index] = wanted
+            burnedSub[index] = 0
+            notice = "Sous-titres : $label…"
+            reloadWithSidecar(index, clip, sub)
+            return
+        }
+        if (inStream && sub != null) {
+            val track = pickTrack(player, C.TRACK_TYPE_TEXT) { format ->
+                val forced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0
+                sameLanguage(format.language, sub.language) && forced == sub.forced && sameCodec(format, sub.codec)
+            } ?: pickTrack(player, C.TRACK_TYPE_TEXT) { format ->
+                val forced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0
+                sameLanguage(format.language, sub.language) && forced == sub.forced
+            }
+            if (track != null) {
+                pickedSub[index] = wanted
+                sidecarSub.remove(index)
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(track.group, listOf(track.index)))
+                    .build()
+                notice = "Sous-titres : $label"
+                return
+            }
+        }
+        // Flux converti, ou sous-titre que la TV ne lit pas (images PGS…) : le serveur le grave dans l'image, à la même position.
+        val factory = clip.streamFor
+        if (factory == null) {
+            notice = "Choix de sous-titres impossible dans ce flux"
+            return
+        }
+        val audio = pickedAudio[index] ?: clip.audioStart
+        pickedSub[index] = wanted
+        burnedSub[index] = wanted
+        sidecarSub.remove(index)
+        relaunch(index, factory(audio, wanted), if (sub == null) "Sous-titres : désactivés…" else "Sous-titres : $label…")
+    }
+    // Un clic sur ST : sous-titre suivant (Sans → chaque piste → Sans). Le changement est appliqué quand les clics s'arrêtent.
+    fun cycleSub() {
+        val index = player.currentMediaItemIndex
+        val clip = clips.getOrNull(index) ?: return
+        if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
+            notice = cycleText(player)
+            return
+        }
+        val next = ((pendingSub ?: subPosition(index, clip)) + 1) % (clip.subs.size + 1)
+        pendingSub = next
+        notice = "Sous-titres : " + subLabel(clip, next)
+    }
+    fun openSubMenu() {
+        val index = player.currentMediaItemIndex
+        val clip = clips.getOrNull(index) ?: return
+        if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
+            notice = "Aucun sous-titre à choisir"
+            return
+        }
+        menuIndex = subPosition(index, clip)
+        shown.value = false
+        swallowOkUp = true
+        subMenu = true
+    }
+    LaunchedEffect(pendingSub) {
+        val target = pendingSub ?: return@LaunchedEffect
+        delay(900)
+        pendingSub = null
+        chooseSub(target)
     }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -470,15 +624,26 @@ fun PlayerScreen(
                         if (ok) chooseAudio(menuIndex)
                         return@onPreviewKeyEvent true
                     }
+                    if (subMenu) {
+                        if (ok) {
+                            subMenu = false
+                            chooseSub(menuIndex)
+                        }
+                        return@onPreviewKeyEvent true
+                    }
                     return@onPreviewKeyEvent false
                 }
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                if (audioMenu) {
-                    val count = clips.getOrNull(player.currentMediaItemIndex)?.audios?.size ?: 0
+                if (audioMenu || subMenu) {
+                    val menuClip = clips.getOrNull(player.currentMediaItemIndex)
+                    val count = if (audioMenu) menuClip?.audios?.size ?: 0 else (menuClip?.subs?.size ?: 0) + 1
                     when (event.key) {
                         Key.DirectionUp -> menuIndex = (menuIndex - 1).coerceAtLeast(0)
                         Key.DirectionDown -> menuIndex = (menuIndex + 1).coerceAtMost((count - 1).coerceAtLeast(0))
-                        Key.Back, Key.Escape -> audioMenu = false
+                        Key.Back, Key.Escape -> {
+                            audioMenu = false
+                            subMenu = false
+                        }
                         else -> Unit
                     }
                     return@onPreviewKeyEvent true
@@ -611,6 +776,16 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.Center),
             )
         }
+        if (subMenu) {
+            val menuClip = clips.getOrNull(player.currentMediaItemIndex)
+            AudioMenu(
+                labels = listOf("Sans") + menuClip?.subs?.map { it.label }.orEmpty(),
+                selected = menuIndex,
+                current = menuClip?.let { subPosition(player.currentMediaItemIndex, it) } ?: -1,
+                modifier = Modifier.align(Alignment.Center),
+                title = "Sous-titres",
+            )
+        }
         if (infoVisible && aspectNote.isNotEmpty()) {
             Text(
                 aspectNote,
@@ -680,7 +855,7 @@ fun PlayerScreen(
                     }
                     PlayerIcon(Glyph.Fwd10) { player.seekTo(player.currentPosition + 10_000); reveal() }
                     PlayerIcon(Glyph.Fwd30) { player.seekTo(player.currentPosition + 30_000); reveal() }
-                    PlayerIcon(Glyph.Subs) { notice = cycleText(player); reveal() }
+                    PlayerIcon(Glyph.Subs, onLongPress = { openSubMenu() }) { cycleSub(); reveal() }
                     PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }) { forceFrench(); reveal() }
                     PlayerIcon(Glyph.Info) { infoVisible = !infoVisible; reveal() }
                     PlayerIcon(Glyph.Skip) {
@@ -700,10 +875,10 @@ internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongP
     var pressing by remember { mutableStateOf(false) }
     var fired by remember { mutableStateOf(false) }
     if (onLongPress != null) {
-        // Appui maintenu 3 secondes : action longue ; appui bref : action normale au relâchement.
+        // Appui maintenu 2 secondes : action longue ; appui bref : action normale au relâchement.
         LaunchedEffect(pressing) {
             if (pressing) {
-                delay(3000)
+                delay(2000)
                 fired = true
                 pressing = false
                 onLongPress()

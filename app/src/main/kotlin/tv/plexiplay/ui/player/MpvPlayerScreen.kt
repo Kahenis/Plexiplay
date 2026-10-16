@@ -115,8 +115,10 @@ internal fun MpvPlayerScreen(
 ) {
     var notice by remember { mutableStateOf("") }
     var audioMenu by remember { mutableStateOf(false) }
+    var subMenu by remember { mutableStateOf(false) }
     var menuIndex by remember { mutableIntStateOf(0) }
     val pickedAudio = remember { mutableMapOf<Int, Int>() }
+    val pickedSub = remember { mutableMapOf<Int, Int>() }
     LaunchedEffect(notice) {
         if (notice.isNotEmpty()) {
             delay(4000)
@@ -301,6 +303,79 @@ internal fun MpvPlayerScreen(
         }
     }
 
+    fun subPosition(pos: Int, clip: ClipPlay): Int {
+        val id = pickedSub[pos] ?: clip.subStart
+        return if (id <= 0) 0 else (clip.subs.indexOfFirst { it.id == id } + 1)
+    }
+    fun subLabel(clip: ClipPlay, position: Int): String =
+        if (position <= 0) "désactivés" else clip.subs.getOrNull(position - 1)?.label.orEmpty()
+
+    // Choix d'un sous-titre : fichier externe ajouté à mpv, sinon piste du fichier (la n-ième piste Plex est la n-ième piste de mpv
+    // quand les nombres concordent, à défaut on cherche par langue et « forcé »).
+    fun chooseSub(position: Int) {
+        val core = screen?.mpv ?: return
+        val pos = core[MpvProperties.PlaylistPos].getOrNull()?.toInt() ?: 0
+        val clip = clips.getOrNull(pos) ?: return
+        if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
+            notice = "Aucun sous-titre à choisir"
+            return
+        }
+        if (position <= 0) {
+            core.command(MpvCommands.set(MpvProperties.Sid, TrackSelection.No))
+            pickedSub[pos] = 0
+            notice = "Sous-titres : désactivés"
+            return
+        }
+        if (!clip.direct) {
+            notice = "Choix de sous-titres impossible dans ce flux"
+            return
+        }
+        val sub = clip.subs.getOrNull(position - 1) ?: return
+        if (sub.url.isNotBlank()) {
+            core.command(
+                MpvCommands.subAdd(sub.url, SubAddMode.Select, sub.language.ifBlank { "und" }, sub.language.ifBlank { "und" }),
+            )
+            pickedSub[pos] = sub.id
+            notice = "Sous-titres : ${sub.label}"
+            return
+        }
+        val tracks = core[MpvProperties.TrackList].getOrNull().orEmpty().filter { it.type == TrackType.Sub }
+        val match = if (tracks.size == clip.subs.size) {
+            tracks[position - 1]
+        } else {
+            tracks.firstOrNull { sameLanguage(it.lang, sub.language) && it.isForced == sub.forced && (sub.codec.isBlank() || it.codec.equals(sub.codec, true)) }
+                ?: tracks.firstOrNull { sameLanguage(it.lang, sub.language) && it.isForced == sub.forced }
+        }
+        if (match == null) {
+            notice = "Ce sous-titre n'est pas lisible dans ce flux"
+            return
+        }
+        core.command(MpvCommands.set(MpvProperties.Sid, TrackSelection.Id(match.id)))
+        pickedSub[pos] = sub.id
+        notice = "Sous-titres : ${sub.label}"
+    }
+    fun cycleSub() {
+        val pos = screen?.mpv?.get(MpvProperties.PlaylistPos)?.getOrNull()?.toInt() ?: index
+        val clip = clips.getOrNull(pos) ?: return
+        if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
+            notice = "Aucun sous-titre disponible"
+            return
+        }
+        chooseSub((subPosition(pos, clip) + 1) % (clip.subs.size + 1))
+    }
+    fun openSubMenu() {
+        val pos = screen?.mpv?.get(MpvProperties.PlaylistPos)?.getOrNull()?.toInt() ?: index
+        val clip = clips.getOrNull(pos) ?: return
+        if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
+            notice = "Aucun sous-titre à choisir"
+            return
+        }
+        menuIndex = subPosition(pos, clip)
+        shown.value = false
+        swallowOkUp = true
+        subMenu = true
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -316,15 +391,25 @@ internal fun MpvPlayerScreen(
                         if (ok) chooseAudio(menuIndex)
                         return@onPreviewKeyEvent true
                     }
+                    if (subMenu) {
+                        if (ok) {
+                            subMenu = false
+                            chooseSub(menuIndex)
+                        }
+                        return@onPreviewKeyEvent true
+                    }
                     return@onPreviewKeyEvent false
                 }
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                if (audioMenu) {
-                    val count = clips.getOrNull(index)?.audios?.size ?: 0
+                if (audioMenu || subMenu) {
+                    val count = if (audioMenu) clips.getOrNull(index)?.audios?.size ?: 0 else (clips.getOrNull(index)?.subs?.size ?: 0) + 1
                     when (event.key) {
                         Key.DirectionUp -> menuIndex = (menuIndex - 1).coerceAtLeast(0)
                         Key.DirectionDown -> menuIndex = (menuIndex + 1).coerceAtMost((count - 1).coerceAtLeast(0))
-                        Key.Back, Key.Escape -> audioMenu = false
+                        Key.Back, Key.Escape -> {
+                            audioMenu = false
+                            subMenu = false
+                        }
                         else -> Unit
                     }
                     return@onPreviewKeyEvent true
@@ -446,6 +531,16 @@ internal fun MpvPlayerScreen(
                 modifier = Modifier.align(Alignment.Center),
             )
         }
+        if (subMenu) {
+            val menuClip = clips.getOrNull(index)
+            AudioMenu(
+                labels = listOf("Sans") + menuClip?.subs?.map { it.label }.orEmpty(),
+                selected = menuIndex,
+                current = menuClip?.let { subPosition(index, it) } ?: -1,
+                modifier = Modifier.align(Alignment.Center),
+                title = "Sous-titres",
+            )
+        }
         if (infoVisible && mpvStats.isNotEmpty()) {
             Text(
                 mpvStats,
@@ -505,19 +600,8 @@ internal fun MpvPlayerScreen(
                         screen?.seek(30.0, SeekMode.Relative, SeekPrecision.Keyframes)
                         reveal()
                     }
-                    PlayerIcon(Glyph.Subs) {
-                        val core = screen?.mpv
-                        if (core != null) {
-                            core.command(MpvCommands.cycle("sid"))
-                            val sid = core.getString("sid").orEmpty()
-                            val track = core[MpvProperties.TrackList].getOrNull().orEmpty()
-                                .firstOrNull { it.type == TrackType.Sub && it.id.toString() == sid }
-                            notice = when {
-                                sid.isBlank() || sid == "no" -> "Sous-titres : désactivés"
-                                track != null -> "Sous-titres : " + track.lang.orEmpty().uppercase().ifBlank { "piste $sid" }
-                                else -> "Sous-titres : piste $sid"
-                            }
-                        }
+                    PlayerIcon(Glyph.Subs, onLongPress = { openSubMenu() }) {
+                        cycleSub()
                         reveal()
                     }
                     PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }) {

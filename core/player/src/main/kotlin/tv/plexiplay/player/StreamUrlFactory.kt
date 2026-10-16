@@ -24,6 +24,7 @@ object StreamUrlFactory {
         videoCodec: String? = null,
         audioCodec: String? = null,
         directStream: Boolean = false,
+        burnSubtitles: Boolean = false,
     ): String {
         val base = serverUri.trimEnd('/') + "/video/:/transcode/universal/start.m3u8"
         val q = mutableListOf(
@@ -42,6 +43,8 @@ object StreamUrlFactory {
         )
         if (audioStreamId != null && audioStreamId > 0) q += "audioStreamID=$audioStreamId"
         if (subtitleStreamId != null) q += "subtitleStreamID=$subtitleStreamId"
+        // Sous-titres incrustés dans l'image par le serveur : s'affichent quel que soit leur format.
+        if (burnSubtitles && subtitleStreamId != null && subtitleStreamId > 0) q += "subtitles=burn"
         if (!videoResolution.isNullOrBlank()) q += "videoResolution=" + enc(videoResolution)
         if (maxVideoBitrate != null && maxVideoBitrate > 0) q += "maxVideoBitrate=$maxVideoBitrate"
         if (!videoCodec.isNullOrBlank()) q += "videoCodec=" + enc(videoCodec)
