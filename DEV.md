@@ -396,3 +396,9 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Appui long 2 s sur ST : liste « Sous-titres » (`AudioMenu` avec titre, « Sans » en premier, ✓ sur le choix en cours).
 - mpv : même interface. Fichier externe : `sub-add` ; piste intégrée : n-ième piste Plex = n-ième piste mpv quand les nombres concordent, sinon langue + forcé. Flux converti en mpv : message « Choix de sous-titres impossible dans ce flux » (pas de relance en mpv).
 - Non vérifié sur une vraie TV. Le choix de sous-titres n'est pas enregistré sur le serveur (seul l'audio l'est).
+
+
+## Version 1.3.5 : bulle « Maintenir pour lister » sur FR et ST
+
+- Module `players` déverrouillé pour cette version (`PlayerScreen.kt`, composant `PlayerIcon`), puis reverrouillé avec de nouveaux hash.
+- Quand le focus est sur FR ou ST (les boutons à appui long, `onLongPress != null`), une bulle claire « Maintenir pour lister » s'affiche au-dessus du bouton (`Popup`, centrée et bornée aux bords de l'écran, même style que « Recommencer » de la fiche film). Elle disparaît quand le focus part. Commun aux lecteurs ExoPlayer et mpv.

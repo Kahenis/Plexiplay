@@ -1037,6 +1037,33 @@ internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongP
                 fontWeight = FontWeight.Bold,
             )
         }
+        // Bulle d'aide au-dessus du bouton quand il a le focus et qu'un appui long ouvre une liste (FR, ST).
+        if (focused && onLongPress != null) {
+            val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.roundToPx() }
+            androidx.compose.ui.window.Popup(
+                popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: androidx.compose.ui.unit.IntRect,
+                        windowSize: androidx.compose.ui.unit.IntSize,
+                        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                        popupContentSize: androidx.compose.ui.unit.IntSize,
+                    ) = androidx.compose.ui.unit.IntOffset(
+                        (anchorBounds.center.x - popupContentSize.width / 2).coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+                        anchorBounds.top - popupContentSize.height - gap,
+                    )
+                },
+            ) {
+                Text(
+                    "Maintenir pour lister",
+                    color = Color(0xFF121418),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .background(Color(0xFFF4F1EA), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                )
+            }
+        }
     }
 }
 
