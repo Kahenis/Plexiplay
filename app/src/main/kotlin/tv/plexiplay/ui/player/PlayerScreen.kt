@@ -158,6 +158,7 @@ fun PlayerScreen(
     var subMenu by remember { mutableStateOf(false) }
     var pendingSub by remember { mutableStateOf<Int?>(null) }
     var audioMenu by remember { mutableStateOf(false) }
+    var audioTag by remember { mutableStateOf("FR") }
     var menuIndex by remember { mutableIntStateOf(0) }
     fun effective(index: Int): ClipPlay? {
         val base = clips.getOrNull(index) ?: return null
@@ -228,6 +229,23 @@ fun PlayerScreen(
             clips.firstOrNull()?.let { applyTracks(this, it) }
         }
     }
+    // Langue lue, pour le bouton FR : choix fait (liste ou FR), sinon piste réellement sélectionnée, sinon réglage de départ ; FR par défaut.
+    fun refreshAudioTag() {
+        val index = player.currentMediaItemIndex
+        val clip = clips.getOrNull(index)
+        val picked = pickedAudio[index]
+        val fromPick = if (picked != null) {
+            if (picked == clip?.frStreamId && picked > 0) "fr" else clip?.audios?.firstOrNull { it.id == picked }?.language
+        } else {
+            null
+        }
+        val fromFr = if (clip != null && (index in frInStream || (clip.frUrl.isNotBlank() && reloadedUrl[index] == clip.frUrl))) "fr" else null
+        val fromTrack = player.currentTracks.groups.firstNotNullOfOrNull { group ->
+            if (group.type != C.TRACK_TYPE_AUDIO) null
+            else (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it).language }
+        }
+        audioTag = langTag(fromPick).ifBlank { langTag(fromFr) }.ifBlank { langTag(fromTrack) }.ifBlank { langTag(clip?.audioLanguage) }.ifBlank { "FR" }
+    }
     fun relaunch(index: Int, url: String, message: String) {
         val position = player.currentPosition
         val ratingKey = clips.getOrNull(index)?.ratingKey.orEmpty()
@@ -277,6 +295,7 @@ fun PlayerScreen(
             }
             if (!reloaded) frInStream += index
             pickedAudio[index] = clip.frStreamId
+            refreshAudioTag()
             notice = if (active) "Audio déjà en français" else "Audio : français"
             if (!active) onAudioChosen(clip)
             return
@@ -293,6 +312,7 @@ fun PlayerScreen(
         // on relance le flux avec cette piste, à la même position, sans quitter le lecteur.
         relaunch(index, audioUrl(index, clip, clip.frStreamId, clip.frUrl), "Passage en français…")
         pickedAudio[index] = clip.frStreamId
+        refreshAudioTag()
         onAudioChosen(clip)
     }
     fun openAudioMenu() {
@@ -323,6 +343,7 @@ fun PlayerScreen(
                 .build()
             frInStream.remove(index)
             pickedAudio[index] = choice.id
+            refreshAudioTag()
             notice = "Audio : ${choice.label}"
             onAudioChosen(clip.copy(frStreamId = choice.id))
             return
@@ -335,6 +356,7 @@ fun PlayerScreen(
         frInStream.remove(index)
         relaunch(index, audioUrl(index, clip, choice.id, choice.url), "Audio : ${choice.label}…")
         pickedAudio[index] = choice.id
+        refreshAudioTag()
         onAudioChosen(clip.copy(frStreamId = choice.id))
     }
     fun subId(index: Int, clip: ClipPlay): Int = pickedSub[index] ?: clip.subStart
@@ -463,12 +485,14 @@ fun PlayerScreen(
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                refreshAudioTag()
                 val clip = clips.getOrNull(player.currentMediaItemIndex)
                 status = clip?.label ?: ""
                 selection[0] = -1
                 selection[1] = 0
             }
             override fun onTracksChanged(tracks: Tracks) {
+                refreshAudioTag()
                 val index = player.currentMediaItemIndex
                 val clip = effective(index) ?: return
                 if (selection[0] == index) return
@@ -696,6 +720,20 @@ fun PlayerScreen(
                     this.player = player
                     useController = false
                     isFocusable = false
+                    // Sous-titres : texte blanc sur un bandeau noir semi-transparent, léger contour ; styles intégrés ignorés.
+                    subtitleView?.apply {
+                        setApplyEmbeddedStyles(false)
+                        setStyle(
+                            androidx.media3.ui.CaptionStyleCompat(
+                                android.graphics.Color.WHITE,
+                                0xA6000000.toInt(),
+                                android.graphics.Color.TRANSPARENT,
+                                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                android.graphics.Color.BLACK,
+                                null,
+                            ),
+                        )
+                    }
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -856,7 +894,7 @@ fun PlayerScreen(
                     PlayerIcon(Glyph.Fwd10) { player.seekTo(player.currentPosition + 10_000); reveal() }
                     PlayerIcon(Glyph.Fwd30) { player.seekTo(player.currentPosition + 30_000); reveal() }
                     PlayerIcon(Glyph.Subs, onLongPress = { openSubMenu() }) { cycleSub(); reveal() }
-                    PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }) { forceFrench(); reveal() }
+                    PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }, label = audioTag) { forceFrench(); reveal() }
                     PlayerIcon(Glyph.Info) { infoVisible = !infoVisible; reveal() }
                     PlayerIcon(Glyph.Skip) {
                         if (player.currentMediaItemIndex < clips.lastIndex) player.seekToNextMediaItem()
@@ -870,7 +908,7 @@ fun PlayerScreen(
 }
 
 @Composable
-internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongPress: (() -> Unit)? = null, onClick: () -> Unit) {
+internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongPress: (() -> Unit)? = null, label: String? = null, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     var pressing by remember { mutableStateOf(false) }
     var fired by remember { mutableStateOf(false) }
@@ -1031,7 +1069,7 @@ internal fun PlayerIcon(glyph: Glyph, requester: FocusRequester? = null, onLongP
         }
         if (glyph == Glyph.Subs || glyph == Glyph.Fr) {
             Text(
-                if (glyph == Glyph.Fr) "FR" else "ST",
+                label ?: if (glyph == Glyph.Fr) "FR" else "ST",
                 color = if (focused) ink else Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,

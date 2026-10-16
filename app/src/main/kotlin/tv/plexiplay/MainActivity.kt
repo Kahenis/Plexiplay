@@ -1242,7 +1242,7 @@ private fun buildQueue(
         // Liste des pistes audio pour l'appui long sur FR : chaque piste a son flux converti prêt.
         val audioChoices = if (featureItem && numeric) {
             MovieFacts.audioStreams(meta).map { stream ->
-                AudioChoice(stream.id, MovieFacts.audioLabel(stream), streamFor(stream.id), stream.id == audioId)
+                AudioChoice(stream.id, MovieFacts.audioLabel(stream), streamFor(stream.id), stream.id == audioId, MovieFacts.code(stream))
             }
         } else {
             emptyList()

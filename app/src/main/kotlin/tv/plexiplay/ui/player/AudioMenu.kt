@@ -17,7 +17,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** Une piste audio du film : son flux converti est prêt pour le cas où elle ne peut pas être choisie dans le flux en cours. */
-data class AudioChoice(val id: Int, val label: String, val url: String, val current: Boolean = false)
+data class AudioChoice(val id: Int, val label: String, val url: String, val current: Boolean = false, val language: String = "")
+
+/** Code de langue sur deux lettres, en majuscules, pour le bouton FR/EN… ; vide si la langue est inconnue. */
+internal fun langTag(code: String?): String {
+    val value = code?.trim()?.lowercase()?.substringBefore('-').orEmpty()
+    return if (value.length >= 2 && value != "und" && value != "zxx" && value.take(2).all { it.isLetter() }) value.take(2).uppercase() else ""
+}
 
 /** Un sous-titre du film (liste de Plex) : `url` est le fichier à charger quand il est externe et textuel. */
 data class SubChoice(

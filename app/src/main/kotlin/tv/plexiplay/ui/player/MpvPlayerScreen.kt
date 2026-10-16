@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -117,7 +118,7 @@ internal fun MpvPlayerScreen(
     var audioMenu by remember { mutableStateOf(false) }
     var subMenu by remember { mutableStateOf(false) }
     var menuIndex by remember { mutableIntStateOf(0) }
-    val pickedAudio = remember { mutableMapOf<Int, Int>() }
+    val pickedAudio = remember { mutableStateMapOf<Int, Int>() }
     val pickedSub = remember { mutableMapOf<Int, Int>() }
     LaunchedEffect(notice) {
         if (notice.isNotEmpty()) {
@@ -264,6 +265,7 @@ internal fun MpvPlayerScreen(
             ?: audio.firstOrNull { sameLanguage(it.lang, "fr") }
         if (french != null) {
             core.command(MpvCommands.set(MpvProperties.Aid, TrackSelection.Id(french.id)))
+            if (clip.frStreamId > 0) pickedAudio[pos] = clip.frStreamId
             notice = "Audio : français"
             onAudioChosen(clip)
         } else {
@@ -471,6 +473,13 @@ internal fun MpvPlayerScreen(
                     fun opt(name: String, value: String) {
                         runCatching { created.mpv?.setString(name, value) }
                     }
+                    // Sous-titres : texte blanc sur un bandeau noir semi-transparent, léger contour (aussi pour les styles intégrés).
+                    opt("sub-color", "#FFFFFFFF")
+                    opt("sub-back-color", "#A6000000")
+                    opt("sub-border-style", "background-box")
+                    opt("sub-border-color", "#FF000000")
+                    opt("sub-border-size", "1")
+                    opt("sub-ass-override", "force")
                     when (mode) {
                         "direct" -> {
                             opt("hwdec", "mediacodec")
@@ -604,7 +613,20 @@ internal fun MpvPlayerScreen(
                         cycleSub()
                         reveal()
                     }
-                    PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }) {
+                    PlayerIcon(
+                        Glyph.Fr,
+                        onLongPress = { openAudioMenu() },
+                        label = run {
+                            val tagClip = clips.getOrNull(index)
+                            val tagPick = pickedAudio[index]
+                            val code = when {
+                                tagPick == null -> tagClip?.audioLanguage
+                                tagPick == tagClip?.frStreamId && (tagPick ?: 0) > 0 -> "fr"
+                                else -> tagClip?.audios?.firstOrNull { it.id == tagPick }?.language
+                            }
+                            langTag(code).ifBlank { "FR" }
+                        },
+                    ) {
                         forceFrench()
                         reveal()
                     }
