@@ -104,6 +104,8 @@ data class ClipPlay(
     val subStart: Int = 0,
     val audioStart: Int = 0,
     val streamFor: ((Int, Int) -> String)? = null,
+    /** Texte de diagnostic (panneau « i ») : versions du film, pistes de sous-titres vues par Plex, choix de départ. */
+    val diag: String = "",
 )
 
 internal enum class Glyph { Play, Pause, Rew10, Fwd10, Rew30, Fwd30, Subs, Fr, Info, Skip, Hide, Stop }
@@ -451,6 +453,35 @@ fun PlayerScreen(
         burnedSub[index] = wanted
         sidecarSub.remove(index)
         relaunch(index, factory(audio, wanted), if (sub == null) "Sous-titres : désactivés…" else "Sous-titres : $label…")
+    }
+    // Diagnostic des sous-titres pour le panneau « i » : ce qui est demandé à Plex, ce que reçoit ExoPlayer, l'état du bouton ST.
+    fun subDiag(): String {
+        val index = player.currentMediaItemIndex
+        val clip = clips.getOrNull(index) ?: return ""
+        val uri = player.currentMediaItem?.localConfiguration?.uri
+        val wantedKeys = setOf("subtitleStreamID", "subtitles", "videoResolution", "maxVideoBitrate", "directStream", "mediaIndex", "audioStreamID", "videoCodec", "audioCodec")
+        val asked = uri?.query.orEmpty().split("&").filter { it.substringBefore("=") in wantedKeys }.joinToString(" ")
+        val lines = mutableListOf<String>()
+        lines += "Appli ${tv.plexiplay.plex.PlexHeaders.VERSION} · ExoPlayer · " + (if (clip.direct && reloadedUrl[index] == null) "direct" else "converti") +
+            (if (reloadedUrl[index] != null) " (relancé)" else "")
+        lines += "Demande Plex : " + asked.ifBlank { "aucun paramètre (lecture directe)" }
+        val eff = effective(index)
+        lines += "ST appli : départ=${clip.subStart} choisi=${pickedSub[index]} incrusté=${burnedSub[index]} annexe=${sidecarSub[index]} " +
+            "mode=${eff?.textMode} liste=${clip.subs.size} message=\"$notice\""
+        val disabled = player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        val texts = mutableListOf<String>()
+        for (group in player.currentTracks.groups) {
+            if (group.type != C.TRACK_TYPE_TEXT) continue
+            for (i in 0 until group.length) {
+                val format = group.getTrackFormat(i)
+                texts += "  ${format.language ?: "?"} ${format.sampleMimeType ?: format.codecs ?: "?"} f=${format.selectionFlags}" +
+                    (if (group.isTrackSelected(i)) " SEL" else "") + (if (!group.isTrackSupported(i)) " NON-LU" else "")
+            }
+        }
+        lines += "ExoPlayer texte : ${if (disabled) "désactivé" else "actif"} · ${texts.size} piste(s)"
+        lines += texts.take(6)
+        lines += clip.diag
+        return lines.joinToString("\n")
     }
     // Un clic sur ST : sous-titre suivant (Sans → chaque piste → Sans). Le changement est appliqué quand les clics s'arrêtent.
     fun cycleSub() {
@@ -840,6 +871,11 @@ fun PlayerScreen(
                 bitsPerSecond,
                 Modifier.align(Alignment.TopStart),
             )
+        }
+        if (infoVisible) {
+            // Relu à chaque affichage de la barre (position mise à jour toutes les 400 ms) : le texte suit l'état réel.
+            val diagnostic = remember(position, notice, pictureWidth, player.currentMediaItemIndex) { subDiag() }
+            SubDiagnostic(diagnostic, Modifier.align(Alignment.TopEnd))
         }
         if (shown.value) {
             val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f

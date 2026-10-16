@@ -416,3 +416,9 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - `buildQueue` : la liste ST ne contient que les pistes de la version (Media) réellement lue.
 - Modules `playback` et `players` déverrouillés le temps de la modification, hash mis à jour, reverrouillés.
 - Sauvegarde du source 1.3.6 : branche `backup-1.3.6` (et tag `v1.3.6`).
+
+## Version 1.3.8 : diagnostic des sous-titres dans le panneau « i »
+- Cas suivi : sous-titres impossibles à couper sur un film converti (résolution réduite), compte Plex en mode « manuellement ».
+- Le bouton « i » affiche en plus un bloc en haut à droite : version de l'appli et moteur, flux direct/converti/relancé, paramètres envoyés à Plex (`subtitleStreamID`, `subtitles`, `videoResolution`, `mediaIndex`, `audioStreamID`…), état du bouton ST (départ, choisi, incrusté, annexe, mode, taille de la liste, dernier message), pistes texte reçues par ExoPlayer (langue, type, indicateurs, sélectionnée, non lue), versions du film et pistes de sous-titres vues par Plex (id, codec, langue, forcé, sélectionné, externe).
+- `ClipPlay.diag` rempli dans `buildQueue` ; composable `SubDiagnostic` (PlayerScreen/MpvPlayerScreen). Aucun jeton n'est affiché.
+- Modules `playback` et `players` déverrouillés puis reverrouillés, hash mis à jour.

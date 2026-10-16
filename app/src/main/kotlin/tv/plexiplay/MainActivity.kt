@@ -1249,6 +1249,22 @@ private fun buildQueue(
         } else {
             emptyList()
         }
+        // Diagnostic (panneau « i ») : versions du film et pistes de sous-titres telles que Plex les décrit.
+        val diagText = if (featureItem) {
+            val rows = mutableListOf("Versions : ${meta.Media.size} · lue : #${meta.Media.indexOf(picked)} · réglage ST départ : \"$subtitleMode\" · choisi : ${chosenSub?.id ?: "aucun"}")
+            rows += "Plan : ${delivery.name} · baisse de résolution : ${if (downscale) "oui (cible $target, source ${nativeHeight ?: "?"})" else "non"}"
+            meta.Media.forEachIndexed { number, media ->
+                val subs = media.Part.flatMap { it.Stream }.filter { it.streamType == 3 }
+                rows += "V$number ${media.videoResolution} ${media.videoCodec} ${media.Part.firstOrNull()?.container.orEmpty()} · ${subs.size} ST"
+                subs.take(8).forEach { st ->
+                    rows += "  #${st.id} ${st.codec} ${st.languageCode.ifBlank { st.language }}" +
+                        (if (st.forced) " forcé" else "") + (if (st.selected) " SÉLECTIONNÉ" else "") + (if (st.key.isNotBlank()) " externe" else "")
+                }
+            }
+            rows.joinToString("\n")
+        } else {
+            ""
+        }
         val info = listOf(if (heavyAudio) "mode compatible : son converti" else choice.reason, video, audio, picked?.videoResolution)
             .filter { !it.isNullOrBlank() }
             .joinToString(" · ")
@@ -1280,6 +1296,7 @@ private fun buildQueue(
             subStart = chosenSub?.id?.toIntOrNull() ?: 0,
             audioStart = audioId ?: 0,
             streamFor = if (featureItem && numeric) { a, sub -> streamFor(a, sub, sub > 0) } else null,
+            diag = diagText,
             sourceAspect = if (picked != null && picked.width > 0 && picked.height > 0) picked.width.toFloat() / picked.height else 0f,
             closeOnEnd = featureItem && feature.type == "movie",
             startMs = if (resume && featureItem) {

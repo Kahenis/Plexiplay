@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -567,6 +568,15 @@ internal fun MpvPlayerScreen(
                 Modifier.align(Alignment.TopStart),
             )
         }
+        if (infoVisible) {
+            val clip = clips.getOrNull(index)
+            val text = if (clip == null) "" else listOf(
+                "Appli ${tv.plexiplay.plex.PlexHeaders.VERSION} · mpv · " + (if (clip.direct) "direct" else "converti"),
+                "ST appli : départ=${clip.subStart} choisi=${pickedSub[index]} liste=${clip.subs.size} message=\"$notice\"",
+                clip.diag,
+            ).joinToString("\n")
+            SubDiagnostic(text, Modifier.align(Alignment.TopEnd))
+        }
         if (shown.value) {
             val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
             Column(
@@ -668,6 +678,22 @@ internal fun PlaybackFacts(
         Text(if (clip?.direct == true) "Lecture directe" else "Transcodage", color = Color.White, fontSize = 16.sp)
         Text("Résolution  $resolution", color = Color.White, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
         Text("Réseau  ${rateLabel(bitsPerSecond)}", color = Color.White, fontSize = 14.sp, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/** Bloc de diagnostic des sous-titres, affiché avec le panneau « i » (en haut à droite). */
+@Composable
+internal fun SubDiagnostic(text: String, modifier: Modifier = Modifier) {
+    if (text.isBlank()) return
+    Column(
+        modifier
+            .padding(28.dp)
+            .width(560.dp)
+            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text("Diagnostic sous-titres", color = Color(0xFF5DD39E), fontSize = 13.sp)
+        Text(text, color = Color(0xFFE6EAEE), fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
