@@ -436,3 +436,13 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - `.github/workflows/apk.yml` : les releases créées par la compilation sont des **pre-release**. Le repli de mise à jour (`releases/latest` de GitHub) ignore les pre-release : il ne sert que la version marquée stable à la main, celle de guilard.com/dl. Pour valider une version : la déposer sur guilard.com (`plexiplay.apk` puis `version.txt`) et la passer en release normale dans GitHub.
 - Panneau « i » (ExoPlayer) : format vidéo reçu (type, profil et niveau, taille, images/s, débit, transfert et profondeur de couleur), décodeur choisi par la TV (matériel ou logiciel), images affichées / perdues / ignorées, coupures de lecture (tampon vide), tampon d'avance.
 - Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
+
+## Version 1.3.92 : baisse de résolution en HEVC (tout sur la carte graphique)
+- Cause établie par la comparaison des lignes de commande du transcodeur Plex (QNAP, carte NVIDIA T400, film 4K HEVC HDR, 1080p / 8 Mbit/s) :
+  - appli officielle : NVDEC + `scale_cuda` (p010, HDR 10 bits conservé) + `hevc_nvenc` — tout sur la carte, fluide ;
+  - Plexiplay (`videoCodec=h264`) : `scale` + `tonemap=hable` + `libx264 -preset veryfast` — tout sur le processeur, plus lent que le temps réel : tampon à 0 s, coupures, blocs dans l'image.
+- `StreamUrlFactory.transcode` : nouveau paramètre `hevcOutput` (ajoute l'autorisation de profil `append-transcode-target-codec(... h264,hevc)` comme pour le flux direct).
+- `buildQueue` : pour une baisse de résolution, si le film est en HEVC, que le lecteur est ExoPlayer et que la TV décode le HEVC, `videoCodec=hevc` (+ autorisation de profil) ; sinon `videoCodec=h264` comme avant. Valable pour le flux de départ et pour les relances (`streamFor`).
+- Le panneau « i » indique la sortie demandée (« sortie HEVC » ou « H.264 »). Le son (AAC stéréo) est inchangé.
+- À vérifier : la ligne de commande du transcodeur doit montrer `hevc_nvenc` et `scale_cuda` ; l'image doit rester en HDR.
+- Modules `players` et `playback` déverrouillés puis reverrouillés, hash mis à jour.

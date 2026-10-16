@@ -1179,6 +1179,9 @@ private fun buildQueue(
         val target = if (featureItem) MovieFacts.targetHeight(resolution) else null
         val nativeHeight = MovieFacts.targetHeight(picked?.videoResolution.orEmpty())
         val downscale = target != null && (nativeHeight == null || target < nativeHeight)
+        // Baisse de résolution d'un film HEVC : la TV décode le HEVC, on demande donc du HEVC au serveur (sinon il doit convertir le HDR
+        // en SDR et encoder en H.264 sur le processeur, trop lent pour un 4K).
+        val hevcOut = downscale && settings.player != PlayerKind.MPV && video.orEmpty().lowercase() in setOf("hevc", "h265") && DeviceCodecs.decodes("hevc")
         val heavyAudio = (settings.compat || feature.ratingKey in settings.compatTitles) && featureItem && settings.player != PlayerKind.MPV &&
             (chosenAudioCodec ?: audio).orEmpty().lowercase().let {
                 it in setOf("dca", "dts", "dtshd", "dts-hd", "truehd")
@@ -1206,10 +1209,11 @@ private fun buildQueue(
                 mediaIndex = meta.Media.indexOf(picked).let { if (it < 0) 0 else it },
                 videoResolution = if (downscale) target.toString() else null,
                 maxVideoBitrate = if (downscale) bitrateFor(target) else null,
-                videoCodec = if (exo && downscale) "h264" else null,
+                videoCodec = if (exo && downscale) (if (hevcOut) "hevc" else "h264") else null,
                 audioCodec = if (exo && !directPlay) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
                 // Seul le son est converti : l'image est copiée telle quelle quand la TV sait la décoder.
                 directStream = !downscale && videoCopy,
+                hevcOutput = hevcOut,
             )
         }
         // Version « français » du même flux, pour le bouton FR du lecteur (relance à la même position).
@@ -1224,10 +1228,11 @@ private fun buildQueue(
             mediaIndex = meta.Media.indexOf(picked).let { if (it < 0) 0 else it },
             videoResolution = if (downscale) target.toString() else null,
             maxVideoBitrate = if (downscale) bitrateFor(target) else null,
-            videoCodec = if (exo && downscale) "h264" else null,
+            videoCodec = if (exo && downscale) (if (hevcOut) "hevc" else "h264") else null,
             audioCodec = if (exo) (if (heavyAudio) DeviceCodecs.convertedAudio() else "aac") else null,
             directStream = !downscale && videoCopy,
             burnSubtitles = burn,
+            hevcOutput = hevcOut,
         )
         // Sous-titres pour le bouton ST : la liste de Plex, avec le fichier à charger pour les sous-titres externes textuels.
         val textCodecs = setOf("srt", "ass", "ssa", "vtt", "subrip")
@@ -1267,7 +1272,7 @@ private fun buildQueue(
         val diagText = if (featureItem) {
             val rows = mutableListOf("Versions : ${meta.Media.size} · lue : #${meta.Media.indexOf(picked)} · réglage ST départ : \"$subtitleMode\" · choisi : ${chosenSub?.id ?: "aucun"}")
             rows += syncNote
-            rows += "Plan : ${delivery.name} · baisse de résolution : ${if (downscale) "oui (cible $target, source ${nativeHeight ?: "?"})" else "non"}"
+            rows += "Plan : ${delivery.name} · baisse de résolution : ${if (downscale) "oui (cible $target, source ${nativeHeight ?: "?"}, sortie ${if (hevcOut) "HEVC" else "H.264"})" else "non"}"
             meta.Media.forEachIndexed { number, media ->
                 val subs = media.Part.flatMap { it.Stream }.filter { it.streamType == 3 }
                 rows += "V$number ${media.videoResolution} ${media.videoCodec} ${media.Part.firstOrNull()?.container.orEmpty()} · ${subs.size} ST"
