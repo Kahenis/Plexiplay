@@ -406,6 +406,6 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 
 ## Version 1.3.6 : style des sous-titres fixé, bouton FR = langue en cours
 
-- Module `players` déverrouillé pour cette version, puis reverrouillé avec de nouveaux hash.
+- Modules `players` et `playback` (AudioChoice dans `buildQueue`) déverrouillés pour cette version, puis reverrouillés avec de nouveaux hash.
 - Sous-titres, permanents et sans réglage : texte blanc sur un bandeau noir semi-transparent (65 %), léger contour noir. ExoPlayer : `SubtitleView.setStyle(CaptionStyleCompat(...))` avec `setApplyEmbeddedStyles(false)`. mpv : `sub-color`, `sub-back-color=#A6000000`, `sub-border-style=background-box`, `sub-border-color`, `sub-border-size=1`, `sub-ass-override=force`. Les sous-titres image (PGS) et ceux gravés par le serveur Plex gardent le style du serveur.
 - Bouton FR : affiche le code de la langue audio lue (FR, EN, DE…). `AudioChoice.language` (code Plex) ; `langTag()`. ExoPlayer : `audioTag` recalculé (`refreshAudioTag`) au changement de piste, après un clic FR ou un choix dans la liste : choix fait, sinon piste réellement sélectionnée, sinon réglage de départ, FR par défaut. mpv : étiquette dérivée de `pickedAudio` (état observable) et du réglage de départ. Le clic simple force toujours le français et le bouton repasse à FR ; l'appui long de 2 s ouvre la liste.
