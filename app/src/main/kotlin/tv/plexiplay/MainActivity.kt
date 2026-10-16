@@ -366,6 +366,28 @@ private fun App(
         }
     }
 
+    // Fond d'écran d'une collection : celui que Plex prévoit pour elle, à défaut le fond d'un des films de la collection.
+    var collectionArt by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(collection?.ratingKey, items) {
+        val current = collection
+        val active = server
+        if (current == null || active == null) {
+            collectionArt = null
+            return@LaunchedEffect
+        }
+        var path = current.art
+        if (path.isBlank()) {
+            path = withContext(Dispatchers.IO) { runCatching { client.metadata(active, current.ratingKey)?.art }.getOrNull() }.orEmpty()
+        }
+        if (path.isBlank()) {
+            path = items.firstOrNull { (it.type == "movie" || it.type == "show") && it.art.isNotBlank() }?.art.orEmpty()
+        }
+        if (path.isBlank()) return@LaunchedEffect
+        posters.load("art-" + current.ratingKey, path, client.wideSources(active, path, 1280, 720)) { loaded ->
+            if (collection?.ratingKey == current.ratingKey) collectionArt = loaded
+        }
+    }
+
     val inside = stack.isNotEmpty() || collection != null
     val useShelves = selected != "settings" && selected != "search" && !inside && (selected == "home" || pane == LibraryPane.NEWS)
     val showTabs = selected != "home" && selected != "settings" && selected != "search" && !inside
@@ -481,6 +503,7 @@ private fun App(
         showTabs = showTabs,
         thumb = { item -> server?.let { client.thumbSources(it, item.thumb) }.orEmpty() },
         posters = posters,
+        backdrop = if (collection != null) collectionArt else null,
         status = status,
         count = if (pane == LibraryPane.LIBRARY && items.isNotEmpty() && entries.firstOrNull { it.id == selected }?.type == "show") items.size else -1,
         onSelect = {
@@ -1214,6 +1237,7 @@ private fun buildQueue(
                 // Seul le son est converti : l'image est copiée telle quelle quand la TV sait la décoder.
                 directStream = !downscale && videoCopy,
                 hevcOutput = hevcOut,
+                maxAudioChannels = if (exo) 6 else null,
             )
         }
         // Version « français » du même flux, pour le bouton FR du lecteur (relance à la même position).
@@ -1233,6 +1257,7 @@ private fun buildQueue(
             directStream = !downscale && videoCopy,
             burnSubtitles = burn,
             hevcOutput = hevcOut,
+            maxAudioChannels = if (exo) 6 else null,
         )
         // Sous-titres pour le bouton ST : la liste de Plex, avec le fichier à charger pour les sous-titres externes textuels.
         val textCodecs = setOf("srt", "ass", "ssa", "vtt", "subrip")

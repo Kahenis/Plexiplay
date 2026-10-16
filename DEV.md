@@ -446,3 +446,8 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Le panneau « i » indique la sortie demandée (« sortie HEVC » ou « H.264 »). Le son (AAC stéréo) est inchangé.
 - À vérifier : la ligne de commande du transcodeur doit montrer `hevc_nvenc` et `scale_cuda` ; l'image doit rester en HDR.
 - Modules `players` et `playback` déverrouillés puis reverrouillés, hash mis à jour.
+
+## Version 1.3.93 : son 5.1 dans les flux convertis, fond d'écran des collections
+- Son : la conversion complète (ExoPlayer) demande jusqu'à 6 canaux (`maxAudioChannels=6`), comme l'appli officielle (AAC 5.1 à 555 kbit/s au lieu d'un mélange stéréo à 138 kbit/s). La ligne « Demande Plex » du panneau « i » affiche `maxAudioChannels`. Pas d'effet sur mpv ni sur la lecture directe.
+- Collections : quand le contenu d'une collection est affiché, le fond d'écran est celui que Plex prévoit pour la collection (`art`, lu dans la liste puis dans la fiche si absent) ; à défaut, le fond du premier film de la collection qui en a un ; à défaut, le fond uni habituel. L'image (1280×720, via `PosterStore`) est assombrie par un dégradé pour garder les affiches lisibles. `ShellScreen` reçoit le paramètre `backdrop` ; le fond de thème est dessiné dans un calque à part.
+- Modules `playback` et `players` déverrouillés puis reverrouillés, hash mis à jour.

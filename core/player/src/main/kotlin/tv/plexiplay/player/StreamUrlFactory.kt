@@ -27,6 +27,8 @@ object StreamUrlFactory {
         burnSubtitles: Boolean = false,
         // Baisse de résolution en HEVC : le serveur garde l'image HDR 10 bits et tout se fait sur la carte graphique, comme avec l'appli officielle.
         hevcOutput: Boolean = false,
+        // Son converti : jusqu'à 6 canaux (5.1), comme l'appli officielle. Sans cela le serveur mélange en stéréo.
+        maxAudioChannels: Int? = null,
     ): String {
         val base = serverUri.trimEnd('/') + "/video/:/transcode/universal/start.m3u8"
         val q = mutableListOf(
@@ -53,6 +55,7 @@ object StreamUrlFactory {
         if (maxVideoBitrate != null && maxVideoBitrate > 0) q += "maxVideoBitrate=$maxVideoBitrate"
         if (!videoCodec.isNullOrBlank()) q += "videoCodec=" + enc(videoCodec)
         if (!audioCodec.isNullOrBlank()) q += "audioCodec=" + enc(audioCodec)
+        if (maxAudioChannels != null && maxAudioChannels > 0) q += "maxAudioChannels=$maxAudioChannels"
         if (directStream || hevcOutput) {
             // Autorise le serveur à copier l'image HEVC (HDR) au lieu de la convertir en H.264.
             q += "X-Plex-Client-Profile-Extra=" +

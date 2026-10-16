@@ -119,6 +119,7 @@ fun ShellScreen(
     showTabs: Boolean,
     thumb: (Metadata) -> List<String>,
     posters: PosterStore,
+    backdrop: android.graphics.Bitmap? = null,
     status: String,
     count: Int = -1,
     onSelect: (RailEntry) -> Unit,
@@ -169,10 +170,28 @@ fun ShellScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().screenBackground())
+    if (backdrop != null) {
+        // Fond d'une collection : l'image du fond, assombrie pour que les affiches restent lisibles.
+        Image(
+            bitmap = backdrop.asImageBitmap(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    0f to Ink.copy(alpha = 0.94f),
+                    0.3f to Ink.copy(alpha = 0.78f),
+                    1f to Ink.copy(alpha = 0.7f),
+                ),
+            ),
+        )
+    }
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .screenBackground()
             .onPreviewKeyEvent { event ->
                 val open = menu
                 if (open != null) {

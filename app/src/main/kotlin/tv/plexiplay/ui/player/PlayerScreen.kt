@@ -476,7 +476,7 @@ fun PlayerScreen(
         val index = player.currentMediaItemIndex
         val clip = clips.getOrNull(index) ?: return ""
         val uri = player.currentMediaItem?.localConfiguration?.uri
-        val wantedKeys = setOf("subtitleStreamID", "subtitles", "videoResolution", "maxVideoBitrate", "directStream", "mediaIndex", "audioStreamID", "videoCodec", "audioCodec")
+        val wantedKeys = setOf("subtitleStreamID", "subtitles", "videoResolution", "maxVideoBitrate", "directStream", "mediaIndex", "audioStreamID", "videoCodec", "audioCodec", "maxAudioChannels")
         val asked = uri?.query.orEmpty().split("&").filter { it.substringBefore("=") in wantedKeys }.joinToString(" ")
         val lines = mutableListOf<String>()
         lines += "Appli ${tv.plexiplay.plex.PlexHeaders.VERSION} · ExoPlayer · " + (if (clip.direct && reloadedUrl[index] == null) "direct" else "converti") +
