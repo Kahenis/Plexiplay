@@ -64,5 +64,7 @@ jobs:
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" "$FILE" --clobber
           else
-            gh release create "$TAG" "$FILE" --target "$GITHUB_SHA" --title "v${VER}" --notes "APK debug signé, compilé automatiquement depuis le commit ${GITHUB_SHA::7}."
+            # Version de test : « pre-release » pour que le repli de mise à jour (GitHub « dernière version ») ne la propose pas.
+            # La version stable, celle de guilard.com/dl, est passée en release normale à la main dans GitHub.
+            gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" --title "v${VER}" --notes "Version de test (pre-release). APK debug signé, compilé automatiquement depuis le commit ${GITHUB_SHA::7}."
           fi

@@ -146,6 +146,9 @@ fun PlayerScreen(
     val firstFrame = remember { mutableStateOf(false) }
     var nudge by remember { mutableIntStateOf(0) }
     var bitsPerSecond by remember { mutableLongStateOf(0L) }
+    // Diagnostic vidéo (panneau « i ») : décodeur choisi par la TV et nombre de coupures de lecture (tampon vide en cours de film).
+    var decoderName by remember { mutableStateOf("") }
+    var rebuffers by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(true) }
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -492,6 +495,17 @@ fun PlayerScreen(
                     (if (group.isTrackSelected(i)) " SEL" else "") + (if (!group.isTrackSupported(i)) " NON-LU" else "")
             }
         }
+        val video = player.videoFormat
+        if (video != null) {
+            val color = video.colorInfo?.let { " transfert=${it.colorTransfer} bits=${it.lumaBitdepth}" }.orEmpty()
+            lines += "Vidéo reçue : ${video.sampleMimeType} ${video.codecs.orEmpty()} ${video.width}×${video.height} " +
+                "${if (video.frameRate > 0f) "%.2f i/s".format(video.frameRate) else ""} ${rateLabel(video.bitrate.toLong().coerceAtLeast(0L))}$color"
+        }
+        val software = decoderName.contains("google", true) || decoderName.contains("c2.android", true) || decoderName.contains("sw", true)
+        val counters = player.videoDecoderCounters?.also { it.ensureUpdated() }
+        lines += "Décodeur : ${decoderName.ifBlank { "?" }}" + (if (decoderName.isNotBlank()) (if (software) " (logiciel ?)" else " (matériel)") else "")
+        lines += "Images : affichées=${counters?.renderedOutputBufferCount ?: 0} perdues=${counters?.droppedBufferCount ?: 0} " +
+            "ignorées=${counters?.skippedOutputBufferCount ?: 0} · coupures=$rebuffers · tampon=${player.totalBufferedDuration / 1000} s"
         lines += "ExoPlayer texte : ${if (disabled) "désactivé" else "actif"} · ${texts.size} piste(s)"
         lines += texts.take(6)
         lines += clip.diag
@@ -583,6 +597,8 @@ fun PlayerScreen(
             }
         }
         player.addListener(listener)
+        var wasReady = false
+        fun diagDecoder(name: String) { decoderName = name }
         val stats = object : AnalyticsListener {
             override fun onBandwidthEstimate(
                 eventTime: AnalyticsListener.EventTime,
@@ -591,6 +607,23 @@ fun PlayerScreen(
                 bitrateEstimate: Long,
             ) {
                 bitsPerSecond = bitrateEstimate
+            }
+
+            override fun onVideoDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                diagDecoder(decoderName)
+            }
+
+            override fun onPlaybackStateChanged(eventTime: AnalyticsListener.EventTime, state: Int) {
+                if (state == Player.STATE_READY) wasReady = true
+                if (state == Player.STATE_BUFFERING && wasReady) {
+                    wasReady = false
+                    rebuffers += 1
+                }
             }
         }
         player.addAnalyticsListener(stats)

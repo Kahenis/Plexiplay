@@ -430,3 +430,9 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Lecteurs ExoPlayer et mpv : chaque choix ST (Sans, piste, fichier externe) est enregistré ; pour un flux converti, l'enregistrement précède la relance du flux.
 - Effet voulu : la sélection de sous-titres du compte pour ce fichier est celle de l'appli, comme avec les apps Plex officielles.
 - Modules `playback` et `players` déverrouillés puis reverrouillés, hash mis à jour.
+
+## Version 1.3.91 : pré-release pour les versions de test, diagnostic vidéo dans « i »
+- Cas suivi : saccades et image abîmée (blocs, dominante bleue) quand l'appli force une conversion 1080p (8 Mbit/s demandés, source 4K HEVC).
+- `.github/workflows/apk.yml` : les releases créées par la compilation sont des **pre-release**. Le repli de mise à jour (`releases/latest` de GitHub) ignore les pre-release : il ne sert que la version marquée stable à la main, celle de guilard.com/dl. Pour valider une version : la déposer sur guilard.com (`plexiplay.apk` puis `version.txt`) et la passer en release normale dans GitHub.
+- Panneau « i » (ExoPlayer) : format vidéo reçu (type, profil et niveau, taille, images/s, débit, transfert et profondeur de couleur), décodeur choisi par la TV (matériel ou logiciel), images affichées / perdues / ignorées, coupures de lecture (tampon vide), tampon d'avance.
+- Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.

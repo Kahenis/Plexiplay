@@ -4,7 +4,7 @@ Player léger pour Plex TV.
 
 Lecteur Android TV pour un serveur Plex. Projet personnel, non affilié à Plex Inc. L'interface reprend la logique d'un rail gauche et d'une grille, pas la marque officielle.
 
-Identifiant : `tv.plexiplay.app`. Version 1.3.9.
+Identifiant : `tv.plexiplay.app`. Version 1.3.91.
 
 APK debug signé, installable : dernière version dans les [releases](https://github.com/Kahenis/plexiplay/releases/latest). La version stable de référence reste dans [plexiplay-clone](https://github.com/Kahenis/plexiplay-clone/releases/latest).
 
