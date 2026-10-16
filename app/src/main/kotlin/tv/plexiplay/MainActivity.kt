@@ -1228,7 +1228,9 @@ private fun buildQueue(
         // Sous-titres pour le bouton ST : la liste de Plex, avec le fichier à charger pour les sous-titres externes textuels.
         val textCodecs = setOf("srt", "ass", "ssa", "vtt", "subrip")
         val subChoices = if (featureItem && numeric) {
-            MovieFacts.subtitleOptions(meta).filter { it.id != "off" }.mapNotNull { option ->
+            // Seulement les pistes de la version réellement lue (un film en plusieurs versions a des identifiants différents).
+            val ownIds = picked?.Part?.flatMap { it.Stream }?.filter { it.streamType == 3 }?.map { it.id.toString() }?.toSet().orEmpty()
+            MovieFacts.subtitleOptions(meta).filter { it.id != "off" && (ownIds.isEmpty() || it.id in ownIds) }.mapNotNull { option ->
                 val id = option.id.toIntOrNull() ?: return@mapNotNull null
                 SubChoice(
                     id, option.label, option.language, option.forced, option.codec, option.external,

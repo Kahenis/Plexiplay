@@ -409,3 +409,10 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Modules `players` et `playback` (AudioChoice dans `buildQueue`) déverrouillés pour cette version, puis reverrouillés avec de nouveaux hash.
 - Sous-titres, permanents et sans réglage : texte blanc sur un bandeau noir semi-transparent (65 %), léger contour noir. ExoPlayer : `SubtitleView.setStyle(CaptionStyleCompat(...))` avec `setApplyEmbeddedStyles(false)`. mpv : `sub-color`, `sub-back-color=#A6000000`, `sub-border-style=background-box`, `sub-border-color`, `sub-border-size=1`, `sub-ass-override=force`. Les sous-titres image (PGS) et ceux gravés par le serveur Plex gardent le style du serveur.
 - Bouton FR : affiche le code de la langue audio lue (FR, EN, DE…). `AudioChoice.language` (code Plex) ; `langTag()`. ExoPlayer : `audioTag` recalculé (`refreshAudioTag`) au changement de piste, après un clic FR ou un choix dans la liste : choix fait, sinon piste réellement sélectionnée, sinon réglage de départ, FR par défaut. mpv : étiquette dérivée de `pickedAudio` (état observable) et du réglage de départ. Le clic simple force toujours le français et le bouton repasse à FR ; l'appui long de 2 s ouvre la liste.
+
+## Version 1.3.7 : « Sans » sous-titres imposé au serveur, liste ST par version
+- Cause suspectée (chez une amie, sous-titres impossibles à couper sur un film converti) : les modes automatiques du compte Plex (« langue étrangère », « automatique ») regravent des sous-titres malgré `subtitleStreamID=0`.
+- `StreamUrlFactory.transcode` : quand `subtitleStreamId == 0`, ajoute `subtitles=none` (lancement et changement via ST).
+- `buildQueue` : la liste ST ne contient que les pistes de la version (Media) réellement lue.
+- Modules `playback` et `players` déverrouillés le temps de la modification, hash mis à jour, reverrouillés.
+- Sauvegarde du source 1.3.6 : branche `backup-1.3.6` (et tag `v1.3.6`).

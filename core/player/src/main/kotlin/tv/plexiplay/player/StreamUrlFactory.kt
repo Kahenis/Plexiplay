@@ -43,6 +43,8 @@ object StreamUrlFactory {
         )
         if (audioStreamId != null && audioStreamId > 0) q += "audioStreamID=$audioStreamId"
         if (subtitleStreamId != null) q += "subtitleStreamID=$subtitleStreamId"
+        // « Sans » : demandé explicitement, pour que les réglages automatiques du compte Plex ne regravent pas de sous-titres.
+        if (subtitleStreamId == 0) q += "subtitles=none"
         // Sous-titres incrustés dans l'image par le serveur : s'affichent quel que soit leur format.
         if (burnSubtitles && subtitleStreamId != null && subtitleStreamId > 0) q += "subtitles=burn"
         if (!videoResolution.isNullOrBlank()) q += "videoResolution=" + enc(videoResolution)
