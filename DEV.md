@@ -504,3 +504,9 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Bouton ST (ExoPlayer) : l'appui simple ouvre la liste des sous-titres du film (« Sans » + pistes) quand le film en a ; l'appui long fait de même. Sans liste (bonus, film sans sous-titres), l'ancien défilement reste. `openSubMenu(fromLongPress)` : le relâchement de la touche n'est ignoré qu'après un appui long. Bouton FR/EN et lecteur mpv inchangés.
 - Numérotation : suite en 1.3.x (1.3.100). `AppUpdate` compare les versions nombre par nombre.
 - Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
+
+## Version 1.4.0 : version de référence (code de la 1.3.100)
+- Aucun changement de code par rapport à la 1.3.100 : passage au numéro 1.4.0 une fois validés sur la TV le changement de langue et de sous-titres en lecture transcodée (relance complète, nouvelles tentatives sur 404), le message « Basculement… » et la liste des sous-titres sur ST.
+- Récapitulatif de la série 1.3.9 → 1.3.100 : sous-titres imposés par le serveur corrigés (1.3.9), pré-release pour les versions de test (1.3.91), baisse de résolution en HEVC sur la carte graphique (1.3.92), son 5.1 et fonds des collections (1.3.93), changement de piste en flux converti : arrêt, enregistrement serveur, relance complète à la même position (1.3.94 à 1.3.99), message de bascule et liste ST (1.3.100).
+- `AppUpdate` compare les versions nombre par nombre : 1.4.0 est plus récente que 1.3.100.
+- Modules `playback` et `players` inchangés (hash identiques).
