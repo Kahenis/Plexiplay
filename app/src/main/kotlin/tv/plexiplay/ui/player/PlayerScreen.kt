@@ -149,6 +149,7 @@ fun PlayerScreen(
     var lastError by remember { mutableStateOf("") }
     var probe by remember { mutableStateOf("") }
     var tick by remember { mutableIntStateOf(0) }
+    var retries by remember { mutableIntStateOf(0) }
     val shown = remember { mutableStateOf(false) }
     var pulse by remember { mutableIntStateOf(0) }
     var position by remember { mutableLongStateOf(0L) }
@@ -632,6 +633,18 @@ fun PlayerScreen(
                     .filterIsInstance<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>().firstOrNull()
                 val where = refused?.let { " · refus HTTP ${it.responseCode} sur ${it.dataSpec.uri.path}" }.orEmpty()
                 lastError = "${error.errorCodeName} ${error.message.orEmpty().take(60)}$where"
+                // Flux converti pas encore prêt à la position demandée (Plex répond 404 au segment) : nouvelle tentative après 3 s.
+                val current = clips.getOrNull(player.currentMediaItemIndex)
+                if (refused?.responseCode == 404 && current?.kind == ClipKind.FEATURE && !firstFrame.value && retries < 5) {
+                    retries += 1
+                    lastChange = "nouvelle tentative $retries/5 après refus 404 (le serveur n'a pas encore ce segment)"
+                    scope.launch {
+                        delay(3000)
+                        player.prepare()
+                        player.playWhenReady = true
+                    }
+                    return
+                }
                 if (pending != null) {
                     failChange("erreur ${error.errorCodeName}")
                     return

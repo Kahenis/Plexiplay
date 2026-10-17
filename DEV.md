@@ -491,3 +491,9 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Panneau « i » : l'erreur du lecteur indique le code HTTP et le chemin de la demande refusée ; « Test du flux » interroge la liste maître, la liste des segments qu'elle annonce et le premier segment (code, durée, message de Plex en cas de refus).
 - Numérotation : on reste en 1.3.x (1.3.100 après 1.3.99) ; la comparaison de versions de `AppUpdate` est numérique par nombre.
 - Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
+
+## Version 1.3.99 : nouvelles tentatives sur refus 404 du segment de reprise
+- Panneau « i » et `ps` de la 1.3.98 : relance complète correcte et **piste anglaise bien lue** (`-map [0:2]`, `language=eng`) ; mais le lecteur reçoit `404` sur `/video/:/transcode/universal/session/…/base/02841.ts` (segment de la position de reprise) et s'arrête ; le transcodeur de la session est parti de 0 (`-segment_start_number 0`, pas de `-ss`). Le test du flux (maître, liste, segment 0) répond 200 : le serveur n'avait pas encore de transcodage positionné quand le lecteur a demandé le segment 2841.
+- PlayerScreen : sur `ERROR_CODE_IO_BAD_HTTP_STATUS` avec code 404, avant la première image d'un film, attente de 3 s puis `prepare()` à la même position, jusqu'à 5 tentatives. « Dernier changement » affiche « nouvelle tentative n/5 après refus 404 ». Vaut aussi pour « Reprendre à… » depuis la page de présentation.
+- Si insuffisant : demander à Plex de démarrer le flux à la position (`offset`), ce qui oblige à décaler la durée et la position affichées.
+- Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
