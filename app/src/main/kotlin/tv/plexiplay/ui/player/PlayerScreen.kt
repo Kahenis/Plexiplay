@@ -128,6 +128,8 @@ fun PlayerScreen(
     formatFix: Boolean = true,
     onAudioChosen: (ClipPlay) -> Unit = {},
     onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
+    // Avant un changement de piste en flux converti : arrête l'ancienne session de transcodage et enregistre la piste audio (-1 = aucune) sur le serveur.
+    onTrackSync: suspend (ClipPlay, Int, String) -> Unit = { _, _, _ -> },
 ) {
     if (playerKind == PlayerKind.MPV) {
         MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen)
@@ -136,6 +138,8 @@ fun PlayerScreen(
     var infoVisible by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf(clips.firstOrNull()?.label ?: "") }
     var notice by remember { mutableStateOf("") }
+    var pending by remember { mutableStateOf<PendingChange?>(null) }
+    var lastChange by remember { mutableStateOf("") }
     val shown = remember { mutableStateOf(false) }
     var pulse by remember { mutableIntStateOf(0) }
     var position by remember { mutableLongStateOf(0L) }
@@ -255,8 +259,7 @@ fun PlayerScreen(
         }
         audioTag = langTag(fromPick).ifBlank { langTag(fromFr) }.ifBlank { langTag(fromTrack) }.ifBlank { langTag(clip?.audioLanguage) }.ifBlank { "FR" }
     }
-    fun relaunch(index: Int, url: String, message: String) {
-        val position = player.currentPosition
+    fun relaunch(index: Int, url: String, message: String, position: Long = player.currentPosition) {
         val ratingKey = clips.getOrNull(index)?.ratingKey.orEmpty()
         reloadedUrl[index] = url
         selection[0] = -1
@@ -279,6 +282,49 @@ fun PlayerScreen(
         if (sub == null || factory == null) return fallback
         burnedSub[index] = sub
         return factory(audioId, sub)
+    }
+    fun selectedAudioLanguage(): String = player.currentTracks.groups.firstNotNullOfOrNull { group ->
+        if (group.type != C.TRACK_TYPE_AUDIO) null
+        else (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { group.getTrackFormat(it).language }
+    }.orEmpty()
+    // Échec d'un changement de piste en flux converti : message pour l'utilisateur, retour au flux précédent à la même position.
+    fun failChange(reason: String) {
+        val change = pending ?: return
+        pending = null
+        val message = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
+        lastChange = "${change.what} · ÉCHEC ($reason) après ${(android.os.SystemClock.elapsedRealtime() - change.startedAt) / 1000} s"
+        val clip = clips.getOrNull(change.index) ?: return
+        if (change.prevAudio != null) pickedAudio[change.index] = change.prevAudio else pickedAudio.remove(change.index)
+        if (change.prevSub != null) pickedSub[change.index] = change.prevSub else pickedSub.remove(change.index)
+        if (change.prevBurn != null) burnedSub[change.index] = change.prevBurn else burnedSub.remove(change.index)
+        refreshAudioTag()
+        notice = message
+        val current = reloadedUrl[change.index] ?: clip.url
+        scope.launch {
+            runCatching { onTrackSync(clip, change.prevAudio ?: -1, current) }
+            runCatching { onSubtitleChosen(clip, change.prevSub ?: clip.subStart) }
+            relaunch(change.index, change.prevUrl, message, change.position)
+        }
+    }
+    // Changement de piste sur un flux converti, comme depuis la page du film : arrêt du flux, enregistrement des pistes sur le serveur,
+    // puis nouveau flux (session neuve) à la même position ; une vérification suit (voir plus bas).
+    fun syncedRelaunch(index: Int, clip: ClipPlay, url: String, message: String, audioId: Int, wantLang: String, what: String, subId: Int? = null) {
+        val position = player.currentPosition
+        val prevUrl = reloadedUrl[index] ?: clip.url
+        val change = PendingChange(
+            index = index, what = what, wantLang = lang2(wantLang), position = position, prevUrl = prevUrl,
+            prevAudio = pickedAudio[index], prevSub = pickedSub[index], prevBurn = burnedSub[index],
+            startedAt = android.os.SystemClock.elapsedRealtime(),
+        )
+        notice = message
+        lastChange = "$what · en cours…"
+        player.pause()
+        scope.launch {
+            runCatching { onTrackSync(clip, audioId, prevUrl) }
+            if (subId != null) runCatching { onSubtitleChosen(clip, subId) }
+            relaunch(index, url, message, position)
+            pending = change
+        }
     }
     fun forceFrench() {
         val index = player.currentMediaItemIndex
@@ -319,10 +365,9 @@ fun PlayerScreen(
         }
         // La piste française n'est pas dans le flux en cours (flux converti, ou piste que la TV ne décode pas) :
         // on relance le flux avec cette piste, à la même position, sans quitter le lecteur.
-        relaunch(index, audioUrl(index, clip, clip.frStreamId, clip.frUrl), "Passage en français…")
+        syncedRelaunch(index, clip, audioUrl(index, clip, clip.frStreamId, clip.frUrl), "Passage en français…", clip.frStreamId, "fr", "audio → FR (#${clip.frStreamId})")
         pickedAudio[index] = clip.frStreamId
         refreshAudioTag()
-        onAudioChosen(clip)
     }
     fun openAudioMenu() {
         val index = player.currentMediaItemIndex
@@ -363,10 +408,9 @@ fun PlayerScreen(
             return
         }
         frInStream.remove(index)
-        relaunch(index, audioUrl(index, clip, choice.id, choice.url), "Audio : ${choice.label}…")
+        syncedRelaunch(index, clip, audioUrl(index, clip, choice.id, choice.url), "Audio : ${choice.label}…", choice.id, choice.language, "audio → ${choice.label} (#${choice.id})")
         pickedAudio[index] = choice.id
         refreshAudioTag()
-        onAudioChosen(clip.copy(frStreamId = choice.id))
     }
     fun subId(index: Int, clip: ClipPlay): Int = pickedSub[index] ?: clip.subStart
     fun subPosition(index: Int, clip: ClipPlay): Int {
@@ -459,17 +503,13 @@ fun PlayerScreen(
             return
         }
         val audio = pickedAudio[index] ?: clip.audioStart
+        val message = if (sub == null) "Sous-titres : désactivés…" else "Sous-titres : $label…"
+        val url = factory(audio, wanted)
+        // Arrêt du flux, choix enregistré sur le serveur (sinon sa piste « sélectionnée » revient dans le flux), puis nouveau flux à la même position.
+        syncedRelaunch(index, clip, url, message, -1, "", "sous-titres → ${if (sub == null) "aucun" else label} (#$wanted)", wanted)
         pickedSub[index] = wanted
         burnedSub[index] = wanted
         sidecarSub.remove(index)
-        val message = if (sub == null) "Sous-titres : désactivés…" else "Sous-titres : $label…"
-        val url = factory(audio, wanted)
-        notice = message
-        // Le choix est d'abord enregistré sur le serveur (sinon sa piste « sélectionnée » revient dans le flux), puis le flux est relancé.
-        scope.launch {
-            runCatching { onSubtitleChosen(clip, wanted) }
-            relaunch(index, url, message)
-        }
     }
     // Diagnostic des sous-titres pour le panneau « i » : ce qui est demandé à Plex, ce que reçoit ExoPlayer, l'état du bouton ST.
     fun subDiag(): String {
@@ -508,6 +548,9 @@ fun PlayerScreen(
             "ignorées=${counters?.skippedOutputBufferCount ?: 0} · coupures=$rebuffers · tampon=${player.totalBufferedDuration / 1000} s"
         lines += "ExoPlayer texte : ${if (disabled) "désactivé" else "actif"} · ${texts.size} piste(s)"
         lines += texts.take(6)
+        lines += "Audio : " + clip.audios.joinToString(" ") { "#${it.id}=${it.language.ifBlank { "?" }}" } +
+            " · demandé=#${pickedAudio[index]} · lu=${selectedAudioLanguage().ifBlank { "?" }}"
+        if (lastChange.isNotBlank()) lines += "Dernier changement : $lastChange"
         lines += clip.diag
         return lines.joinToString("\n")
     }
@@ -562,6 +605,10 @@ fun PlayerScreen(
                 selection[1] = 0
             }
             override fun onPlayerError(error: PlaybackException) {
+                if (pending != null) {
+                    failChange("erreur ${error.errorCodeName}")
+                    return
+                }
                 val clip = clips.getOrNull(player.currentMediaItemIndex) ?: return
                 val decoderTrouble = error.errorCode in setOf(
                     PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
@@ -700,9 +747,30 @@ fun PlayerScreen(
         if (clip?.kind == ClipKind.FEATURE && player.playWhenReady && !firstFrame.value) onCompat()
     }
 
+    // Vérification d'un changement de piste en flux converti : le nouveau flux doit démarrer avec la langue demandée.
+    LaunchedEffect(pending) {
+        val change = pending ?: return@LaunchedEffect
+        var waited = 0
+        while (waited < 30_000) {
+            delay(500)
+            waited += 500
+            if (pending !== change) return@LaunchedEffect
+            if (player.playbackState != Player.STATE_READY) continue
+            val played = selectedAudioLanguage()
+            val elapsed = (android.os.SystemClock.elapsedRealtime() - change.startedAt) / 1000
+            if (change.wantLang.isBlank() || played.isBlank() || lang2(played) == change.wantLang) {
+                pending = null
+                lastChange = "${change.what} · OK après $elapsed s · piste lue ${played.ifBlank { "?" }}"
+            } else {
+                failChange("piste lue ${lang2(played)} au lieu de ${change.wantLang}")
+            }
+            return@LaunchedEffect
+        }
+        failChange("flux non prêt après 30 s")
+    }
     LaunchedEffect(notice) {
         if (notice.isEmpty()) return@LaunchedEffect
-        delay(4000)
+        delay(if (notice.startsWith("Impossible")) 9000L else 4000L)
         notice = ""
     }
 
@@ -921,7 +989,7 @@ fun PlayerScreen(
         }
         if (infoVisible) {
             // Relu à chaque affichage de la barre (position mise à jour toutes les 400 ms) : le texte suit l'état réel.
-            val diagnostic = remember(position, notice, pictureWidth, player.currentMediaItemIndex) { subDiag() }
+            val diagnostic = remember(position, notice, lastChange, pictureWidth, player.currentMediaItemIndex) { subDiag() }
             SubDiagnostic(diagnostic, Modifier.align(Alignment.TopEnd))
         }
         if (shown.value) {
@@ -1209,6 +1277,40 @@ private fun exoTracksReady(tracks: Tracks, clip: ClipPlay): Boolean {
     if (clip.audioLanguage.isNotBlank() && !audio) return false
     if (clip.textMode != "off" && !text) return false
     return tracks.groups.isNotEmpty()
+}
+
+/** Changement de piste en attente de vérification (flux converti) : de quoi vérifier la langue lue et revenir au flux précédent. */
+private class PendingChange(
+    val index: Int,
+    val what: String,
+    val wantLang: String,
+    val position: Long,
+    val prevUrl: String,
+    val prevAudio: Int?,
+    val prevSub: Int?,
+    val prevBurn: Int?,
+    val startedAt: Long,
+)
+
+/** Code de langue sur deux lettres, codes à trois lettres (fra/fre, deu/ger…) ramenés à la même valeur ; vide si inconnu. */
+private fun lang2(code: String?): String {
+    val value = code?.trim()?.lowercase()?.substringBefore('-').orEmpty()
+    if (value.isBlank() || value == "und") return ""
+    return when (value) {
+        "fra", "fre" -> "fr"
+        "eng" -> "en"
+        "deu", "ger" -> "de"
+        "spa" -> "es"
+        "ita" -> "it"
+        "por" -> "pt"
+        "nld", "dut" -> "nl"
+        "jpn" -> "ja"
+        "zho", "chi" -> "zh"
+        "kor" -> "ko"
+        "rus" -> "ru"
+        "ara" -> "ar"
+        else -> value.take(2)
+    }
 }
 
 private fun sameLanguage(track: String?, wanted: String): Boolean {

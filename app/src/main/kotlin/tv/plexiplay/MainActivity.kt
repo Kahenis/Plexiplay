@@ -811,6 +811,15 @@ private fun App(
                 val active = server
                 if (active != null) withContext(Dispatchers.IO) { runCatching { client.setSubtitleStream(active, clip.partId, id) } }
             },
+            onTrackSync = { clip, audioId, oldUrl ->
+                val active = server
+                if (active != null) withContext(Dispatchers.IO) {
+                    runCatching { client.stopTranscode(active, android.net.Uri.parse(oldUrl).getQueryParameter("session").orEmpty()) }
+                    if (audioId > 0) runCatching { client.setAudioStream(active, clip.partId, audioId) }
+                    // Laisse au serveur le temps d'arrêter l'ancien transcodage.
+                    kotlinx.coroutines.delay(700)
+                }
+            },
             onAudioChosen = { clip ->
                 val active = server
                 if (active != null) Thread { runCatching { client.setAudioStream(active, clip.partId, clip.frStreamId) } }.start()

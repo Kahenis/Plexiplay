@@ -268,6 +268,15 @@ class PlexClient(
         get(url, server.accessToken)
     }
 
+    /** Arrête une session de transcodage : le nouveau flux démarre alors sur une session neuve, avec les pistes enregistrées. */
+    fun stopTranscode(server: ServerEndpoint, session: String) {
+        if (session.isBlank()) return
+        val url = "${server.uri}/video/:/transcode/universal/stop".toHttpUrl().newBuilder()
+            .addQueryParameter("session", session)
+            .build()
+        runCatching { get(url.toString(), server.accessToken) }
+    }
+
     /** Enregistre sur le serveur la piste audio choisie (comme le fait le client officiel). */
     fun setAudioStream(server: ServerEndpoint, partId: Long, streamId: Int) {
         if (partId <= 0L || streamId <= 0) return
