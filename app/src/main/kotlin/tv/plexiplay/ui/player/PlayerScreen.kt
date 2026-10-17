@@ -108,6 +108,8 @@ data class ClipPlay(
     val streamFor: ((Int, Int) -> String)? = null,
     /** Texte de diagnostic (panneau « i ») : versions du film, pistes de sous-titres vues par Plex, choix de départ. */
     val diag: String = "",
+    /** Langue audio demandée après un changement de piste (relance complète) : le lecteur vérifie qu'elle est bien jouée. */
+    val expectAudio: String = "",
 )
 
 internal enum class Glyph { Play, Pause, Rew10, Fwd10, Rew30, Fwd30, Subs, Fr, Info, Skip, Hide, Stop }
@@ -130,6 +132,9 @@ fun PlayerScreen(
     onSubtitleChosen: suspend (ClipPlay, Int) -> Unit = { _, _ -> },
     // Avant un changement de piste en flux converti : arrête l'ancienne session de transcodage et enregistre la piste audio (-1 = aucune) sur le serveur.
     onTrackSync: suspend (ClipPlay, Int, String) -> Unit = { _, _, _ -> },
+    // Changement de piste sur un flux converti : relance complète du film comme depuis la page de présentation
+    // (clip, piste audio, sous-titre, position, adresse du flux en cours). Renvoie vrai si l'appli a relancé le film.
+    onReload: suspend (ClipPlay, Int, Int, Long, String) -> Boolean = { _, _, _, _, _ -> false },
 ) {
     if (playerKind == PlayerKind.MPV) {
         MpvPlayerScreen(clips, mpvMode, onProgress, onExit, onRegisterBack, onAudioChosen, onSubtitleChosen)
@@ -294,10 +299,6 @@ fun PlayerScreen(
         val message = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
         lastChange = "${change.what} · ÉCHEC ($reason) après ${(android.os.SystemClock.elapsedRealtime() - change.startedAt) / 1000} s"
         val clip = clips.getOrNull(change.index) ?: return
-        // Version de test 1.3.95 : le nouveau flux reste en place (pas de retour au flux précédent), pour pouvoir lire sur le serveur
-        // la piste réellement choisie par Plex (ps du transcodeur). Le panneau « i » garde la raison de l'échec.
-        notice = message
-        if (true) return
         if (change.prevAudio != null) pickedAudio[change.index] = change.prevAudio else pickedAudio.remove(change.index)
         if (change.prevSub != null) pickedSub[change.index] = change.prevSub else pickedSub.remove(change.index)
         if (change.prevBurn != null) burnedSub[change.index] = change.prevBurn else burnedSub.remove(change.index)
@@ -323,7 +324,12 @@ fun PlayerScreen(
         notice = message
         lastChange = "$what · en cours…"
         player.pause()
+        val reloadAudio = if (audioId > 0) audioId else (pickedAudio[index] ?: clip.audioStart)
+        val reloadSub = subId ?: (pickedSub[index] ?: clip.subStart)
         scope.launch {
+            // Plex ne change de piste dans un flux converti qu'à un nouveau lancement du film : relance complète (fermeture, reprise à la même position).
+            val reloaded = runCatching { onReload(clip, reloadAudio, reloadSub, position, prevUrl) }.getOrDefault(false)
+            if (reloaded) return@launch
             runCatching { onTrackSync(clip, audioId, prevUrl) }
             if (subId != null) runCatching { onSubtitleChosen(clip, subId) }
             relaunch(index, url, message, position)
@@ -771,6 +777,27 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         failChange("flux non prêt après 30 s")
+    }
+    // Film relancé après un changement de piste : la langue jouée doit être celle demandée.
+    LaunchedEffect(Unit) {
+        val expected = lang2(clips.firstOrNull { it.kind == ClipKind.FEATURE }?.expectAudio)
+        if (expected.isBlank()) return@LaunchedEffect
+        var waited = 0
+        while (waited < 30_000) {
+            delay(500)
+            waited += 500
+            if (player.playbackState != Player.STATE_READY) continue
+            val played = selectedAudioLanguage()
+            if (played.isBlank() || lang2(played) == expected) {
+                lastChange = "relance complète · OK · piste lue ${played.ifBlank { "?" }}"
+            } else {
+                lastChange = "relance complète · ÉCHEC (piste lue ${lang2(played)} au lieu de $expected)"
+                notice = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
+            }
+            return@LaunchedEffect
+        }
+        lastChange = "relance complète · flux non prêt après 30 s"
+        notice = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
     }
     LaunchedEffect(notice) {
         if (notice.isEmpty()) return@LaunchedEffect

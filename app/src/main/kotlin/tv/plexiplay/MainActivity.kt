@@ -144,6 +144,8 @@ private fun App(
     var inviteBusy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choisissez une catégorie") }
     var clips by remember { mutableStateOf<List<ClipPlay>?>(null) }
+    // Dernier lancement depuis la page d'un film : de quoi relancer le film (changement de piste en flux converti).
+    var lastPlay by remember { mutableStateOf<Triple<Metadata, String, Boolean>?>(null) }
     var movie by remember { mutableStateOf<Metadata?>(null) }
     var confirm by remember { mutableStateOf<String?>(null) }
     var series by remember { mutableStateOf<Metadata?>(null) }
@@ -713,6 +715,7 @@ private fun App(
             settings = settings,
             onPlay = { full, resolution, audio, subtitles, resume ->
                 playError = ""
+                lastPlay = Triple(full, resolution, resume)
                 Thread {
                     val built = runCatching {
                         buildQueue(client, activeServer, full, settings, store.clientId(), resolution, audio, subtitles, resume)
@@ -818,6 +821,47 @@ private fun App(
                     if (audioId > 0) runCatching { client.setAudioStream(active, clip.partId, audioId) }
                     // Laisse au serveur le temps d'arrêter l'ancien transcodage.
                     kotlinx.coroutines.delay(700)
+                }
+            },
+            onReload = { clip, audioId, subId, positionMs, oldUrl ->
+                val active = server
+                val play = lastPlay
+                if (active == null || play == null || play.first.ratingKey != clip.ratingKey || clip.partId <= 0L) {
+                    false
+                } else {
+                    val built = withContext(Dispatchers.IO) {
+                        runCatching {
+                            var note = ""
+                            runCatching { client.stopTranscode(active, android.net.Uri.parse(oldUrl).getQueryParameter("session").orEmpty()) }
+                            val audioOk = if (audioId > 0) runCatching { client.setAudioStream(active, clip.partId, audioId) }.isSuccess else true
+                            val subOk = runCatching { client.setSubtitleStream(active, clip.partId, subId.coerceAtLeast(0)) }.getOrDefault(false)
+                            note = "enregistrement serveur : audio #$audioId " + (if (audioOk) "OK" else "ÉCHEC") + " · ST #${subId.coerceAtLeast(0)} " + (if (subOk) "OK" else "ÉCHEC")
+                            // Position envoyée au serveur (rapport « arrêté »), comme quand on quitte le film.
+                            client.timeline(active, clip.ratingKey, "stopped", positionMs, play.first.duration, reportSession)
+                            kotlinx.coroutines.delay(1500)
+                            val fresh = client.metadata(active, clip.ratingKey) ?: play.first
+                            val language = clip.audios.firstOrNull { it.id == audioId }?.language.orEmpty()
+                            val queue = buildQueue(
+                                client, active, fresh, settings, store.clientId(), play.second,
+                                language.ifBlank { settings.audioLanguage },
+                                if (subId > 0) subId.toString() else "off",
+                                resume = false, bonus = false,
+                            )
+                            queue.map {
+                                if (it.kind == tv.plexiplay.plex.preroll.ClipKind.FEATURE) {
+                                    it.copy(startMs = positionMs, expectAudio = language, diag = it.diag + "\nDernier changement : relance complète · " + note)
+                                } else {
+                                    it
+                                }
+                            }
+                        }.getOrNull().orEmpty()
+                    }
+                    if (built.isEmpty()) {
+                        false
+                    } else {
+                        clips = built
+                        true
+                    }
                 }
             },
             onAudioChosen = { clip ->
@@ -1302,10 +1346,20 @@ private fun buildQueue(
         } else {
             "sélection serveur : #$serverSub (inchangée)"
         }
+        // Même chose pour la piste audio d'un flux converti : le serveur transcode la piste « sélectionnée » du fichier, pas celle de l'adresse.
+        val serverAudio = picked?.Part?.flatMap { it.Stream }?.firstOrNull { it.streamType == 2 && it.selected }?.id ?: 0
+        val wantedAudio = audioId ?: 0
+        val audioNote = if (featureItem && numeric && !directPlay && wantedAudio > 0 && serverAudio != wantedAudio) {
+            val done = runCatching { client.setAudioStream(server, MovieFacts.partId(meta), wantedAudio) }.isSuccess
+            "sélection serveur audio : #$serverAudio → #$wantedAudio (" + (if (done) "enregistrée" else "ÉCHEC") + ")"
+        } else {
+            "sélection serveur audio : #$serverAudio (inchangée)"
+        }
         // Diagnostic (panneau « i ») : versions du film et pistes de sous-titres telles que Plex les décrit.
         val diagText = if (featureItem) {
             val rows = mutableListOf("Versions : ${meta.Media.size} · lue : #${meta.Media.indexOf(picked)} · réglage ST départ : \"$subtitleMode\" · choisi : ${chosenSub?.id ?: "aucun"}")
             rows += syncNote
+            rows += audioNote
             rows += "Plan : ${delivery.name} · baisse de résolution : ${if (downscale) "oui (cible $target, source ${nativeHeight ?: "?"}, sortie ${if (hevcOut) "HEVC" else "H.264"})" else "non"}"
             meta.Media.forEachIndexed { number, media ->
                 val subs = media.Part.flatMap { it.Stream }.filter { it.streamType == 3 }
