@@ -497,3 +497,10 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - PlayerScreen : sur `ERROR_CODE_IO_BAD_HTTP_STATUS` avec code 404, avant la première image d'un film, attente de 3 s puis `prepare()` à la même position, jusqu'à 5 tentatives. « Dernier changement » affiche « nouvelle tentative n/5 après refus 404 ». Vaut aussi pour « Reprendre à… » depuis la page de présentation.
 - Si insuffisant : demander à Plex de démarrer le flux à la position (`offset`), ce qui oblige à décaler la durée et la position affichées.
 - Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
+
+## Version 1.3.100 : message « Basculement… », ST ouvre la liste
+- Essais : en mode automatique, le changement de langue FR ↔ EN en 1080p transcodé fonctionne (1.3.99).
+- Message centré « Basculement, veuillez patienter quelques secondes… » (fond noir semi-transparent) : affiché dès la validation d'un changement de piste en flux converti (`switching`, ancien lecteur figé puis nouveau lecteur noir), retiré à la première image en lecture, à l'échec définitif (popup) ou après 90 s. Un film relancé (`expectAudio`) démarre avec le message.
+- Bouton ST (ExoPlayer) : l'appui simple ouvre la liste des sous-titres du film (« Sans » + pistes) quand le film en a ; l'appui long fait de même. Sans liste (bonus, film sans sous-titres), l'ancien défilement reste. `openSubMenu(fromLongPress)` : le relâchement de la touche n'est ignoré qu'après un appui long. Bouton FR/EN et lecteur mpv inchangés.
+- Numérotation : suite en 1.3.x (1.3.100). `AppUpdate` compare les versions nombre par nombre.
+- Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.

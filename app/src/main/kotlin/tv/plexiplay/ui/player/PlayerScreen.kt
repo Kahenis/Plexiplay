@@ -150,6 +150,8 @@ fun PlayerScreen(
     var probe by remember { mutableStateOf("") }
     var tick by remember { mutableIntStateOf(0) }
     var retries by remember { mutableIntStateOf(0) }
+    // Message « Basculement… » : pendant un changement de piste en flux converti, jusqu'à l'apparition de l'image.
+    var switching by remember { mutableStateOf(clips.any { it.expectAudio.isNotBlank() }) }
     val shown = remember { mutableStateOf(false) }
     var pulse by remember { mutableIntStateOf(0) }
     var position by remember { mutableLongStateOf(0L) }
@@ -301,6 +303,7 @@ fun PlayerScreen(
     fun failChange(reason: String) {
         val change = pending ?: return
         pending = null
+        switching = false
         val message = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
         lastChange = "${change.what} · ÉCHEC ($reason) après ${(android.os.SystemClock.elapsedRealtime() - change.startedAt) / 1000} s"
         val clip = clips.getOrNull(change.index) ?: return
@@ -329,6 +332,7 @@ fun PlayerScreen(
         notice = message
         lastChange = "$what · en cours…"
         player.pause()
+        switching = true
         val reloadAudio = if (audioId > 0) audioId else (pickedAudio[index] ?: clip.audioStart)
         val reloadSub = subId ?: (pickedSub[index] ?: clip.subStart)
         scope.launch {
@@ -590,7 +594,7 @@ fun PlayerScreen(
         pendingSub = next
         notice = "Sous-titres : " + subLabel(clip, next)
     }
-    fun openSubMenu() {
+    fun openSubMenu(fromLongPress: Boolean = true) {
         val index = player.currentMediaItemIndex
         val clip = clips.getOrNull(index) ?: return
         if (clip.kind != ClipKind.FEATURE || clip.subs.isEmpty()) {
@@ -599,7 +603,8 @@ fun PlayerScreen(
         }
         menuIndex = subPosition(index, clip)
         shown.value = false
-        swallowOkUp = true
+        // Appui long : le relâchement de la touche ne doit pas valider le choix. Appui bref : la touche est déjà relâchée.
+        swallowOkUp = fromLongPress
         subMenu = true
     }
     LaunchedEffect(pendingSub) {
@@ -841,6 +846,21 @@ fun PlayerScreen(
         probe = "en cours…"
         probe = withContext(kotlinx.coroutines.Dispatchers.IO) { probeStream(uri) }
     }
+    LaunchedEffect(switching) {
+        if (!switching) return@LaunchedEffect
+        var waited = 0
+        delay(1500)
+        while (waited < 90_000) {
+            delay(300)
+            waited += 300
+            val failed = retries >= 5 && player.playbackState == Player.STATE_IDLE
+            if (player.isPlaying || failed) {
+                switching = false
+                return@LaunchedEffect
+            }
+        }
+        switching = false
+    }
     LaunchedEffect(infoVisible) {
         while (infoVisible) {
             tick += 1
@@ -1029,6 +1049,17 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 28.dp),
             )
         }
+        if (switching) {
+            Text(
+                "Basculement, veuillez patienter quelques secondes…",
+                color = Color.White,
+                fontSize = 26.sp,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color(0xCC000000), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 28.dp, vertical = 16.dp),
+            )
+        }
         if (audioMenu) {
             val menuClip = clips.getOrNull(player.currentMediaItemIndex)
             val menuCurrent = pickedAudio[player.currentMediaItemIndex] ?: menuClip?.audios?.firstOrNull { it.current }?.id
@@ -1123,7 +1154,16 @@ fun PlayerScreen(
                     }
                     PlayerIcon(Glyph.Fwd10) { player.seekTo(player.currentPosition + 10_000); reveal() }
                     PlayerIcon(Glyph.Fwd30) { player.seekTo(player.currentPosition + 30_000); reveal() }
-                    PlayerIcon(Glyph.Subs, onLongPress = { openSubMenu() }) { cycleSub(); reveal() }
+                    PlayerIcon(Glyph.Subs, onLongPress = { openSubMenu() }) {
+                        // Appui simple : liste des sous-titres du film (plus lisible que le défilement, surtout en flux converti).
+                        val subClip = clips.getOrNull(player.currentMediaItemIndex)
+                        if (subClip != null && subClip.kind == ClipKind.FEATURE && subClip.subs.isNotEmpty()) {
+                            openSubMenu(fromLongPress = false)
+                        } else {
+                            cycleSub()
+                            reveal()
+                        }
+                    }
                     PlayerIcon(Glyph.Fr, onLongPress = { openAudioMenu() }, label = audioTag) { forceFrench(); reveal() }
                     PlayerIcon(Glyph.Info) { infoVisible = !infoVisible; reveal() }
                     PlayerIcon(Glyph.Skip) {
