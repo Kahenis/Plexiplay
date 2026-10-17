@@ -484,3 +484,10 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - « Dernier changement : relance complète · demandé : résolution, audio, ST, reprise à N s · enregistrement serveur : … » (réglages réellement envoyés à la relance).
 - Attente après l'arrêt de l'ancien transcodage : 1,5 s → 5 s.
 - Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour. MainActivity : callback `onReload` (hors modules verrouillés).
+
+## Version 1.3.98 : relance complète sans rapport « arrêté », test du flux étendu
+- Panneau « i » de la 1.3.97 : relance correcte (1080p, audio #11494, ST #0, reprise à 2830 s, enregistrement serveur OK), liste maître HTTP 200, mais le lecteur s'arrête sur `ERROR_CODE_IO_BAD_HTTP_STATUS` et aucun « Plex Transcoder » n'est actif.
+- Hypothèse : le rapport « arrêté » envoyé au serveur avant la relance (1.3.96) fait couper la nouvelle session par Plex. Il est retiré (la position est transmise par `startMs`). L'arrêt de l'ancienne session de transcodage, l'enregistrement des pistes et l'attente de 5 s restent.
+- Panneau « i » : l'erreur du lecteur indique le code HTTP et le chemin de la demande refusée ; « Test du flux » interroge la liste maître, la liste des segments qu'elle annonce et le premier segment (code, durée, message de Plex en cas de refus).
+- Numérotation : on reste en 1.3.x (1.3.100 après 1.3.99) ; la comparaison de versions de `AppUpdate` est numérique par nombre.
+- Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.

@@ -628,7 +628,10 @@ fun PlayerScreen(
                 selection[1] = 0
             }
             override fun onPlayerError(error: PlaybackException) {
-                lastError = "${error.errorCodeName} ${error.message.orEmpty().take(90)}"
+                val refused = generateSequence<Throwable>(error) { it.cause }
+                    .filterIsInstance<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>().firstOrNull()
+                val where = refused?.let { " · refus HTTP ${it.responseCode} sur ${it.dataSpec.uri.path}" }.orEmpty()
+                lastError = "${error.errorCodeName} ${error.message.orEmpty().take(60)}$where"
                 if (pending != null) {
                     failChange("erreur ${error.errorCodeName}")
                     return
@@ -823,18 +826,7 @@ fun PlayerScreen(
         val uri = player.currentMediaItem?.localConfiguration?.uri?.toString() ?: return@LaunchedEffect
         if (!uri.startsWith("http")) return@LaunchedEffect
         probe = "en cours…"
-        probe = withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val started = android.os.SystemClock.elapsedRealtime()
-            runCatching {
-                val connection = java.net.URL(uri).openConnection() as java.net.HttpURLConnection
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 15_000
-                val code = connection.responseCode
-                val stream = if (code in 200..399) connection.inputStream else connection.errorStream
-                val text = stream?.bufferedReader()?.use { it.readText().take(160).replace("\n", " ") }.orEmpty()
-                "HTTP $code en ${android.os.SystemClock.elapsedRealtime() - started} ms · $text"
-            }.getOrElse { "ÉCHEC ${it.javaClass.simpleName} ${it.message.orEmpty().take(80)} après ${android.os.SystemClock.elapsedRealtime() - started} ms" }
-        }
+        probe = withContext(kotlinx.coroutines.Dispatchers.IO) { probeStream(uri) }
     }
     LaunchedEffect(infoVisible) {
         while (infoVisible) {
@@ -1523,4 +1515,45 @@ private fun cycleText(player: ExoPlayer): String {
     }
     player.trackSelectionParameters = builder.build()
     return message
+}
+
+
+/**
+ * Test du flux converti (panneau « i ») : liste maître, liste des segments qu'elle annonce, premier segment.
+ * Montre le code de réponse de Plex à chaque étape (et son message en cas de refus), sans afficher d'adresse ni de jeton.
+ */
+private fun probeStream(uri: String): String {
+    fun fetch(url: String): Triple<Int, Long, String> {
+        val started = android.os.SystemClock.elapsedRealtime()
+        val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 20_000
+        val code = connection.responseCode
+        val stream = if (code in 200..399) connection.inputStream else connection.errorStream
+        val text = stream?.bufferedReader()?.use { reader ->
+            val buffer = CharArray(4000)
+            val count = reader.read(buffer)
+            if (count > 0) String(buffer, 0, count) else ""
+        }.orEmpty()
+        return Triple(code, android.os.SystemClock.elapsedRealtime() - started, text)
+    }
+    fun firstEntry(text: String): String? = text.lines().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+    fun reason(text: String) = " « " + text.take(120).replace("\n", " ") + " »"
+    return try {
+        val (code, ms, text) = fetch(uri)
+        val out = StringBuilder("maître HTTP $code en $ms ms")
+        if (code !in 200..399) return out.append(reason(text)).toString()
+        val variant = firstEntry(text) ?: return out.append(" · aucune liste annoncée").toString()
+        val variantUrl = java.net.URI(uri).resolve(variant).toString()
+        val (variantCode, variantMs, variantText) = fetch(variantUrl)
+        out.append(" · liste HTTP $variantCode en $variantMs ms")
+        if (variantCode !in 200..399) return out.append(reason(variantText)).toString()
+        val segment = firstEntry(variantText) ?: return out.append(" · aucun segment annoncé").toString()
+        val (segmentCode, segmentMs, segmentText) = fetch(java.net.URI(variantUrl).resolve(segment).toString())
+        out.append(" · segment HTTP $segmentCode en $segmentMs ms")
+        if (segmentCode !in 200..399) out.append(reason(segmentText))
+        out.toString()
+    } catch (e: Exception) {
+        "ÉCHEC ${e.javaClass.simpleName} ${e.message.orEmpty().take(80)}"
+    }
 }

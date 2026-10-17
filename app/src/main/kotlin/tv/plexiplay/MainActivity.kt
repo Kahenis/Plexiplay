@@ -836,8 +836,7 @@ private fun App(
                             val audioOk = if (audioId > 0) runCatching { client.setAudioStream(active, clip.partId, audioId) }.isSuccess else true
                             val subOk = runCatching { client.setSubtitleStream(active, clip.partId, subId.coerceAtLeast(0)) }.getOrDefault(false)
                             note = "demandé : " + (if (play.second.isBlank()) "résolution native" else "${play.second}p") + ", audio #$audioId, ST #${subId.coerceAtLeast(0)}, reprise à ${positionMs / 1000} s · enregistrement serveur : audio #$audioId " + (if (audioOk) "OK" else "ÉCHEC") + " · ST #${subId.coerceAtLeast(0)} " + (if (subOk) "OK" else "ÉCHEC")
-                            // Position envoyée au serveur (rapport « arrêté »), comme quand on quitte le film.
-                            client.timeline(active, clip.ratingKey, "stopped", positionMs, play.first.duration, reportSession)
+                            // Pas de rapport « arrêté » : Plex pourrait couper la nouvelle session (la position est transmise par l'appli).
                             kotlinx.coroutines.delay(5000)
                             val fresh = client.metadata(active, clip.ratingKey) ?: play.first
                             val language = clip.audios.firstOrNull { it.id == audioId }?.language.orEmpty()
