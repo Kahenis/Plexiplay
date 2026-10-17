@@ -294,6 +294,10 @@ fun PlayerScreen(
         val message = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
         lastChange = "${change.what} · ÉCHEC ($reason) après ${(android.os.SystemClock.elapsedRealtime() - change.startedAt) / 1000} s"
         val clip = clips.getOrNull(change.index) ?: return
+        // Version de test 1.3.95 : le nouveau flux reste en place (pas de retour au flux précédent), pour pouvoir lire sur le serveur
+        // la piste réellement choisie par Plex (ps du transcodeur). Le panneau « i » garde la raison de l'échec.
+        notice = message
+        if (true) return
         if (change.prevAudio != null) pickedAudio[change.index] = change.prevAudio else pickedAudio.remove(change.index)
         if (change.prevSub != null) pickedSub[change.index] = change.prevSub else pickedSub.remove(change.index)
         if (change.prevBurn != null) burnedSub[change.index] = change.prevBurn else burnedSub.remove(change.index)

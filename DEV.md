@@ -461,3 +461,8 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - À vérifier : sur un film transcodé, FR puis EN par les boutons ; la ligne de commande du transcodeur doit changer de piste (`-map [0:2]`).
 - Non traité : son transcodé en stéréo malgré `maxAudioChannels=6` (vu sur ce film DTS).
 - Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
+
+## Version 1.3.95 : test de diagnostic du changement de piste
+- En cas d'échec de la vérification (voir 1.3.94), le nouveau flux n'est plus remplacé par le flux précédent : le message reste affiché et le flux demandé continue, pour lire sur le serveur (`ps` du transcodeur Plex) la piste réellement choisie par Plex. Le panneau « i » garde « Dernier changement : … ÉCHEC (raison) ».
+- Version de test : le retour automatique au flux précédent sera rétabli une fois la cause trouvée.
+- Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour.
