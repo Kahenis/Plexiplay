@@ -476,3 +476,11 @@ Pas de compilation locale (le SDK Android n'est pas joignable depuis l'environne
 - Effet de bord voulu : le choix de langue ou de sous-titres modifie la sélection du fichier sur le serveur (comme les apps Plex officielles).
 - À vérifier : FR → EN et EN → FR par le lecteur en 1080p ; depuis la page de présentation, l'anglais en 1080p doit être entendu ; sous-titres.
 - Modules `playback` (`buildQueue`) et `players` (PlayerScreen) déverrouillés puis reverrouillés, hash mis à jour.
+
+## Version 1.3.97 : diagnostic de la relance complète (écran noir)
+- Cas suivi : après un changement de langue en 1080p transcodé (1.3.96), écran noir ; panneau « i » : aucune image reçue (décodeur « ? », tampon 0 s), aucun « Plex Transcoder » actif sur le NAS (`ps`), plan 4K sans baisse de résolution. La surveillance de 25 s avait basculé le film en mode compatible, ce qui masquait le flux relancé.
+- PlayerScreen : plus de bascule automatique en mode compatible pour un film relancé après un changement de piste (`expectAudio` renseigné).
+- Panneau « i » : ligne « Lecteur : état · lecture voulue · image reçue · erreur : code + message » ; ligne « Test du flux » : sans image après 8 s, l'adresse du flux est interrogée directement (HTTP code, durée, début de la réponse de Plex) ; rafraîchi chaque seconde.
+- « Dernier changement : relance complète · demandé : résolution, audio, ST, reprise à N s · enregistrement serveur : … » (réglages réellement envoyés à la relance).
+- Attente après l'arrêt de l'ancien transcodage : 1,5 s → 5 s.
+- Module `players` déverrouillé (PlayerScreen) puis reverrouillé, hash mis à jour. MainActivity : callback `onReload` (hors modules verrouillés).

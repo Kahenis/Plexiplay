@@ -72,6 +72,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.plexiplay.player.AspectMode
 import tv.plexiplay.player.Engine
 import tv.plexiplay.player.PlayerKind
@@ -145,6 +146,9 @@ fun PlayerScreen(
     var notice by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<PendingChange?>(null) }
     var lastChange by remember { mutableStateOf("") }
+    var lastError by remember { mutableStateOf("") }
+    var probe by remember { mutableStateOf("") }
+    var tick by remember { mutableIntStateOf(0) }
     val shown = remember { mutableStateOf(false) }
     var pulse by remember { mutableIntStateOf(0) }
     var position by remember { mutableLongStateOf(0L) }
@@ -561,6 +565,15 @@ fun PlayerScreen(
         lines += "Audio : " + clip.audios.joinToString(" ") { "#${it.id}=${it.language.ifBlank { "?" }}" } +
             " · demandé=#${pickedAudio[index]} · lu=${selectedAudioLanguage().ifBlank { "?" }}"
         if (lastChange.isNotBlank()) lines += "Dernier changement : $lastChange"
+        val stateName = when (player.playbackState) {
+            Player.STATE_IDLE -> "inactif"
+            Player.STATE_BUFFERING -> "préparation"
+            Player.STATE_READY -> "prêt"
+            else -> "terminé"
+        }
+        lines += "Lecteur : $stateName · lecture voulue=${player.playWhenReady} · image reçue=${firstFrame.value}" +
+            (if (lastError.isNotBlank()) " · erreur : $lastError" else "")
+        if (probe.isNotBlank()) lines += "Test du flux : $probe"
         lines += clip.diag
         return lines.joinToString("\n")
     }
@@ -615,6 +628,7 @@ fun PlayerScreen(
                 selection[1] = 0
             }
             override fun onPlayerError(error: PlaybackException) {
+                lastError = "${error.errorCodeName} ${error.message.orEmpty().take(90)}"
                 if (pending != null) {
                     failChange("erreur ${error.errorCodeName}")
                     return
@@ -752,6 +766,8 @@ fun PlayerScreen(
     // Surveillance : si le film n'avance pas après 20 s, on bascule seul en mode compatible.
     LaunchedEffect(player) {
         if (compat) return@LaunchedEffect
+        // Film relancé après un changement de piste : pas de retour automatique au mode compatible (le « i » doit montrer le vrai flux).
+        if (clips.any { it.expectAudio.isNotBlank() }) return@LaunchedEffect
         delay(25000)
         val clip = clips.getOrNull(player.currentMediaItemIndex)
         if (clip?.kind == ClipKind.FEATURE && player.playWhenReady && !firstFrame.value) onCompat()
@@ -798,6 +814,33 @@ fun PlayerScreen(
         }
         lastChange = "relance complète · flux non prêt après 30 s"
         notice = "Impossible en transcodant. Veuillez choisir vos préférences sur la page de présentation."
+    }
+    // Aucune image au bout de 8 s : test direct de l'adresse du flux (réponse de Plex), affiché dans le « i ».
+    LaunchedEffect(player) {
+        delay(8000)
+        if (firstFrame.value) return@LaunchedEffect
+        val index = player.currentMediaItemIndex
+        val uri = player.currentMediaItem?.localConfiguration?.uri?.toString() ?: return@LaunchedEffect
+        if (!uri.startsWith("http")) return@LaunchedEffect
+        probe = "en cours…"
+        probe = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val started = android.os.SystemClock.elapsedRealtime()
+            runCatching {
+                val connection = java.net.URL(uri).openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 10_000
+                connection.readTimeout = 15_000
+                val code = connection.responseCode
+                val stream = if (code in 200..399) connection.inputStream else connection.errorStream
+                val text = stream?.bufferedReader()?.use { it.readText().take(160).replace("\n", " ") }.orEmpty()
+                "HTTP $code en ${android.os.SystemClock.elapsedRealtime() - started} ms · $text"
+            }.getOrElse { "ÉCHEC ${it.javaClass.simpleName} ${it.message.orEmpty().take(80)} après ${android.os.SystemClock.elapsedRealtime() - started} ms" }
+        }
+    }
+    LaunchedEffect(infoVisible) {
+        while (infoVisible) {
+            tick += 1
+            delay(1000)
+        }
     }
     LaunchedEffect(notice) {
         if (notice.isEmpty()) return@LaunchedEffect
@@ -1020,7 +1063,7 @@ fun PlayerScreen(
         }
         if (infoVisible) {
             // Relu à chaque affichage de la barre (position mise à jour toutes les 400 ms) : le texte suit l'état réel.
-            val diagnostic = remember(position, notice, lastChange, pictureWidth, player.currentMediaItemIndex) { subDiag() }
+            val diagnostic = remember(position, notice, lastChange, lastError, probe, tick, pictureWidth, player.currentMediaItemIndex) { subDiag() }
             SubDiagnostic(diagnostic, Modifier.align(Alignment.TopEnd))
         }
         if (shown.value) {
